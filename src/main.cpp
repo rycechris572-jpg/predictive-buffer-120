@@ -26,6 +26,26 @@ constexpr int SPAM_STREAK_REQUIRED = 3;
 
 static void refreshBufferHud();
 
+// SONWARE V2 defaults are defined in mod.json.
+static bool essentialLogsEnabled() {
+    return Mod::get()->getSettingValue<bool>("essential-logs");
+}
+
+static bool detailedInputLogsEnabled() {
+    return Mod::get()->getSettingValue<bool>("detailed-input-logs");
+}
+
+static int getDelayScanStride(int maxDelayFrames) {
+    // Full scans every possible delay. Balanced checks up to about 32
+    // candidate delays; Low-end checks about 12 to reduce CPU cost.
+    // This trades some fine-grained delay selection for lower CPU cost.
+    auto preset = Mod::get()->getSettingValue<std::string>("performance-preset");
+    if (preset == "Full" || maxDelayFrames <= 1) return 1;
+
+    int budget = preset == "Low-end" ? 12 : 32;
+    return std::max(1, (maxDelayFrames + budget - 1) / budget);
+}
+
 class TrajectoryBufferSim {
 private:
     PlayerObject* m_simPlayer1 = nullptr;
@@ -129,24 +149,26 @@ public:
         m_rapidInputStreak = 0;
     }
 
-    // F6 cycles through 10 buffer presets and OFF.
+    // F6 cycles through 9 buffer presets (maximum 60 ticks) and OFF.
     // Single-value presets use the same tick limit for normal and wave.
     void cyclePreset() {
-        m_presetIndex = (m_presetIndex + 1) % 11;
+        m_presetIndex = (m_presetIndex + 1) % 10;
         m_waitTicks = -1;
         m_queuedOpposite = false;
 
-        constexpr int normalTicks[] = {2, 4, 8, 16, 24, 32, 48, 54, 60, 120, 0};
-        constexpr int waveTicks[]   = {2, 4, 8,  8, 24, 32, 48, 54, 60, 120, 0};
-        m_enabled = m_presetIndex != 10;
+        constexpr int normalTicks[] = {2, 4, 8, 16, 24, 32, 48, 54, 60, 0};
+        constexpr int waveTicks[]   = {2, 4, 8,  8, 24, 32, 48, 54, 60, 0};
+        m_enabled = m_presetIndex != 9;
         m_maxTicksNormal = normalTicks[m_presetIndex];
         m_maxTicksWave = waveTicks[m_presetIndex];
 
-        if (m_enabled) {
-            printf("[InputBuffer] F6 Cycle -> STAGE %d: %d Ticks All | %d Ticks Wave\n",
-                   m_presetIndex + 1, m_maxTicksNormal, m_maxTicksWave);
-        } else {
-            printf("[InputBuffer] F6 Cycle -> STAGE 11: OFF (100%% Raw Input)\n");
+        if (essentialLogsEnabled()) {
+            if (m_enabled) {
+                log::info("[SONWARE] Stage {} selected: {} ticks normal / {} ticks wave.",
+                    m_presetIndex + 1, m_maxTicksNormal, m_maxTicksWave);
+            } else {
+                log::info("[SONWARE] Buffer OFF; raw input enabled.");
+            }
         }
     }
 
@@ -376,7 +398,8 @@ public:
         int bestDelay = 0;
         int bestTicks = ticksFrame0;
 
-        for (int delay = 1; delay <= maxDelayFrames; delay++) {
+        const int scanStride = getDelayScanStride(maxDelayFrames);
+        for (int delay = 1; delay <= maxDelayFrames; delay += scanStride) {
             int ticks = getSurvivalTicks(pl, p1, p2, isDual, delay, push, targetHorizon);
 
             if (isWave) {
@@ -409,8 +432,11 @@ public:
         }
 
         if (bestDelay > 0) {
-            printf("[InputBuffer] *** SAVED +%d TICKS (%.2f frames @ 60fps) %s! (Frame0: %d -> Delayed: %d) [Limit: %d] ***\n",
-                bestDelay, bestDelay / 4.0f, act, ticksFrame0, bestTicks, maxDelayFrames);
+            // Detailed per-input logging is OFF by default to avoid log spam.
+            if (detailedInputLogsEnabled()) {
+                log::info("[SONWARE] Buffered {} by {} ticks (immediate survival: {}, delayed survival: {}, limit: {}).",
+                    act, bestDelay, ticksFrame0, bestTicks, maxDelayFrames);
+            }
             m_bufferedPush = push;
             m_waitTicks = bestDelay;
             return false;
@@ -481,33 +507,36 @@ public:
 
 static TrajectoryBufferSim s_sim;
 static cocos2d::CCLabelBMFont* s_bufferHud = nullptr;
+static cocos2d::CCLabelBMFont* s_bufferButtonLabel = nullptr;
+static cocos2d::CCLayerColor* s_sonwarePanel = nullptr;
+
+static void refreshBufferButton() {
+    if (!s_bufferButtonLabel) return;
+    s_bufferButtonLabel->setString("CYCLE PRESET  >");
+    s_bufferButtonLabel->setColor({145, 235, 255});
+}
 
 static void refreshBufferHud() {
-    if (!s_bufferHud) return;
-    if (!s_sim.enabled()) {
-        s_bufferHud->setString("BUFFER: OFF");
-        s_bufferHud->setColor({255, 130, 130});
-    } else {
-        auto normal = s_sim.normalTicks();
-        auto wave = s_sim.waveTicks();
-        auto status = normal == wave
-            ? fmt::format("BUFFER: {} TICKS", normal)
-            : fmt::format("BUFFER: {}/{} TICKS", normal, wave);
-        s_bufferHud->setString(status.c_str());
-        s_bufferHud->setColor({115, 225, 255});
+    if (s_bufferHud) {
+        if (!s_sim.enabled()) {
+            s_bufferHud->setString("STATUS  |  OFF");
+            s_bufferHud->setColor({255, 135, 145});
+        } else {
+            auto normal = s_sim.normalTicks();
+            auto wave = s_sim.waveTicks();
+            auto status = normal == wave
+                ? fmt::format("STATUS  |  {} TICKS", normal)
+                : fmt::format("STATUS  |  {} NORMAL / {} WAVE", normal, wave);
+            s_bufferHud->setString(status.c_str());
+            s_bufferHud->setColor({130, 245, 190});
+        }
     }
+    refreshBufferButton();
 }
 
 $on_mod(Loaded) {
-    AllocConsole();
-    FILE* f;
-    freopen_s(&f, "CONOUT$", "w", stdout);
-    SetConsoleTitleA("Geode Predictive Input Buffer - Live Console");
-    printf("============================================================\n");
-    printf(" [InputBuffer] v4.6 LOADED (Wave Spikes/Saws Trajectory Fix)\n");
-    printf(" [InputBuffer] Starting Mode: STAGE 1 (2 All / 2 Wave)\n");
-    printf(" [InputBuffer] Press F6 in-level to cycle: 2/2 -> 4/4 -> 8/8 -> 16/8 -> 24 -> 32 -> 48 -> 54 -> 60 -> 120 -> OFF\n");
-    printf("============================================================\n");
+    log::info("[SONWARE V2] Predictive Buffer loaded. Default performance preset: Balanced.");
+    log::info("[SONWARE V2] Essential event logs are enabled; detailed input logs are disabled by default.");
 }
 
 class $modify(BufPlayLayer, PlayLayer) {
@@ -520,22 +549,97 @@ class $modify(BufPlayLayer, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         s_sim.init();
-        // In-level overlay; removed automatically with PlayLayer.
+        // SONWARE in-level control card: compact, high-contrast, and clickable.
+        // All elements are owned by PlayLayer, so they disappear on level exit.
         auto size = cocos2d::CCDirector::sharedDirector()->getWinSize();
-        s_bufferHud = cocos2d::CCLabelBMFont::create("BUFFER: 2 TICKS", "bigFont.fnt");
-        if (s_bufferHud) {
-            s_bufferHud->setScale(0.35f);
-            s_bufferHud->setAnchorPoint({0.f, 1.f});
-            s_bufferHud->setPosition({8.f, size.height - 8.f});
-            s_bufferHud->setZOrder(9999);
-            this->addChild(s_bufferHud);
-            refreshBufferHud();
+        constexpr float panelW = 212.f;
+        constexpr float panelH = 86.f;
+        s_sonwarePanel = cocos2d::CCLayerColor::create({12, 18, 31, 220}, panelW, panelH);
+        if (s_sonwarePanel) {
+            s_sonwarePanel->setAnchorPoint({0.f, 1.f});
+            s_sonwarePanel->setPosition({12.f, size.height - 12.f});
+            s_sonwarePanel->setZOrder(9999);
+            this->addChild(s_sonwarePanel);
+
+            // Cyan accent rail and subtle divider create a distinct dashboard look.
+            auto* accent = cocos2d::CCLayerColor::create({55, 205, 255, 255}, 3.f, panelH);
+            if (accent) {
+                accent->setAnchorPoint({0.f, 0.f});
+                accent->setPosition({0.f, 0.f});
+                s_sonwarePanel->addChild(accent);
+            }
+            auto* divider = cocos2d::CCLayerColor::create({65, 100, 135, 190}, panelW - 18.f, 1.f);
+            if (divider) {
+                divider->setPosition({10.f, 31.f});
+                s_sonwarePanel->addChild(divider);
+            }
+
+            auto* title = cocos2d::CCLabelBMFont::create("SONWARE  /  INPUT BUFFER", "bigFont.fnt");
+            if (title) {
+                title->setAnchorPoint({0.f, 0.5f});
+                title->setPosition({11.f, 70.f});
+                title->setScale(0.34f);
+                title->setColor({125, 220, 255});
+                s_sonwarePanel->addChild(title);
+            }
+
+            auto* cap = cocos2d::CCLabelBMFont::create("MAX 60", "bigFont.fnt");
+            if (cap) {
+                cap->setAnchorPoint({1.f, 0.5f});
+                cap->setPosition({panelW - 9.f, 70.f});
+                cap->setScale(0.25f);
+                cap->setColor({255, 205, 115});
+                s_sonwarePanel->addChild(cap);
+            }
+
+            s_bufferHud = cocos2d::CCLabelBMFont::create("STATUS  •  2 TICKS", "bigFont.fnt");
+            if (s_bufferHud) {
+                s_bufferHud->setAnchorPoint({0.f, 0.5f});
+                s_bufferHud->setPosition({11.f, 48.f});
+                s_bufferHud->setScale(0.30f);
+                s_sonwarePanel->addChild(s_bufferHud);
+            }
+
+            auto* buttonBg = cocos2d::CCLayerColor::create({24, 43, 63, 255}, panelW - 20.f, 23.f);
+            if (buttonBg) {
+                buttonBg->setPosition({10.f, 3.f});
+                s_sonwarePanel->addChild(buttonBg);
+            }
+
+            auto* buttonText = cocos2d::CCLabelBMFont::create("CYCLE PRESET  >", "bigFont.fnt");
+            if (buttonText) {
+                buttonText->setScale(0.31f);
+                s_bufferButtonLabel = buttonText;
+                auto* item = cocos2d::CCMenuItemLabel::create(
+                    buttonText, this, menu_selector(BufPlayLayer::onSonwareCycle));
+                if (item) {
+                    auto* menu = cocos2d::CCMenu::createWithItem(item);
+                    if (menu) {
+                        menu->setPosition({panelW * 0.5f, 15.f});
+                        menu->setZOrder(1);
+                        s_sonwarePanel->addChild(menu);
+                    }
+                }
+            }
         }
+        refreshBufferHud();
         return true;
+    }
+
+    void onSonwareCycle(cocos2d::CCObject*) {
+        s_sim.cyclePreset();
+        refreshBufferHud();
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* gameObject) {
         if (s_sim.checkSimulationDeath(player)) return;
+
+        auto* pl = PlayLayer::get();
+        if (essentialLogsEnabled() && pl &&
+            (player == pl->m_player1 || player == pl->m_player2)) {
+            log::info("[SONWARE] Player death recorded.");
+        }
+
         PlayLayer::destroyPlayer(player, gameObject);
     }
 
@@ -551,6 +655,8 @@ class $modify(BufPlayLayer, PlayLayer) {
 
     void onQuit() {
         s_bufferHud = nullptr;
+        s_bufferButtonLabel = nullptr;
+        s_sonwarePanel = nullptr;
         PlayLayer::onQuit();
         s_sim.quit();
     }
@@ -678,3 +784,4 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
         GJBaseGameLayer::playerTouchedRing(player, ring);
     }
 };
+
