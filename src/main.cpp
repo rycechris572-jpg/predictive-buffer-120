@@ -555,6 +555,30 @@ static bool toggleSonwareConsole() {
     return true;
 }
 
+static void refreshBufferButton() {
+    if (!s_bufferButtonLabel) return;
+    s_bufferButtonLabel->setString("CYCLE PRESET  >");
+    s_bufferButtonLabel->setColor({145, 235, 255});
+}
+
+static void refreshBufferHud() {
+    if (s_bufferHud) {
+        if (!s_sim.enabled()) {
+            s_bufferHud->setString("STATUS  |  OFF");
+            s_bufferHud->setColor({255, 135, 145});
+        } else {
+            auto normal = s_sim.normalTicks();
+            auto wave = s_sim.waveTicks();
+            auto status = normal == wave
+                ? fmt::format("STATUS  |  {} TICKS", normal)
+                : fmt::format("STATUS  |  {} NORMAL / {} WAVE", normal, wave);
+            s_bufferHud->setString(status.c_str());
+            s_bufferHud->setColor({130, 245, 190});
+        }
+    }
+    refreshBufferButton();
+}
+
 // SONWARE dashboard. Right Alt toggles visibility; drag the title strip to move it.
 class SonwareGuiLayer : public cocos2d::CCLayer {
 protected:
