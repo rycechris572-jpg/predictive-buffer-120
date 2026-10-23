@@ -43,7 +43,7 @@ static int getDelayScanStride(int maxDelayFrames) {
     auto preset = Mod::get()->getSettingValue<std::string>("performance-preset");
     if (preset == "Full" || maxDelayFrames <= 1) return 1;
 
-    int budget = preset == "Low-end" ? 12 : 32;
+    int budget = preset == "Low-end" ? 6 : 12;
     return std::max(1, (maxDelayFrames + budget - 1) / budget);
 }
 
