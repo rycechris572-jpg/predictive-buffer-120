@@ -3,6 +3,7 @@
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
+#include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/GameObject.hpp>
 #include <Geode/modify/EffectGameObject.hpp>
 #include <Geode/modify/HardStreak.hpp>
@@ -534,10 +535,188 @@ static void refreshBufferHud() {
     refreshBufferButton();
 }
 
+// Shared in-game/menu overlay. Right Alt toggles visibility; drag the title strip to move it.
+class SonwareGuiLayer : public cocos2d::CCLayer {
+protected:
+    cocos2d::CCLayerColor* m_panel = nullptr;
+    bool m_rightAltWasDown = false;
+    bool m_dragging = false;
+    cocos2d::CCPoint m_lastTouch = {0.f, 0.f};
+
+    void keepPanelOnScreen() {
+        if (!m_panel) return;
+        auto size = cocos2d::CCDirector::sharedDirector()->getWinSize();
+        auto pos = m_panel->getPosition();
+        auto panelSize = m_panel->getContentSize();
+        float halfW = panelSize.width * m_panel->getScaleX() * 0.5f;
+        float halfH = panelSize.height * m_panel->getScaleY() * 0.5f;
+        pos.x = std::max(halfW + 6.f, std::min(size.width - halfW - 6.f, pos.x));
+        pos.y = std::max(halfH + 6.f, std::min(size.height - halfH - 6.f, pos.y));
+        m_panel->setPosition(pos);
+    }
+
+public:
+    static SonwareGuiLayer* create() {
+        auto ret = new SonwareGuiLayer();
+        if (ret && ret->init()) {
+            ret->autorelease();
+            return ret;
+        }
+        CC_SAFE_DELETE(ret);
+        return nullptr;
+    }
+
+    bool init() override {
+        if (!cocos2d::CCLayer::init()) return false;
+        auto size = cocos2d::CCDirector::sharedDirector()->getWinSize();
+        this->setContentSize(size);
+        this->scheduleUpdate();
+
+        // Compact dashboard. Scale it down on smaller game windows so the full
+        // panel and its labels remain inside the visible screen area.
+        constexpr float panelW = 228.f;
+        constexpr float panelH = 98.f;
+        m_panel = cocos2d::CCLayerColor::create({12, 18, 31, 238}, panelW, panelH);
+        if (!m_panel) return true;
+        m_panel->setAnchorPoint({0.5f, 0.5f});
+        float availableW = std::max(1.f, size.width - 24.f);
+        float availableH = std::max(1.f, size.height - 24.f);
+        float uiScale = std::min(1.f, std::min(availableW / panelW, availableH / panelH));
+        m_panel->setScale(uiScale);
+        m_panel->setPosition({size.width * 0.5f, size.height * 0.5f});
+        m_panel->setZOrder(9999);
+        this->addChild(m_panel);
+        s_sonwarePanel = m_panel;
+
+        auto* accent = cocos2d::CCLayerColor::create({55, 205, 255, 255}, 3.f, panelH);
+        if (accent) {
+            accent->setAnchorPoint({0.f, 0.f});
+            accent->setPosition({0.f, 0.f});
+            m_panel->addChild(accent);
+        }
+        auto* divider = cocos2d::CCLayerColor::create({65, 100, 135, 190}, panelW - 20.f, 1.f);
+        if (divider) {
+            divider->setPosition({10.f, 33.f});
+            m_panel->addChild(divider);
+        }
+        auto* title = cocos2d::CCLabelBMFont::create("SONWARE", "bigFont.fnt");
+        if (title) {
+            title->setAnchorPoint({0.f, 0.5f});
+            title->setPosition({11.f, 81.f});
+            title->setScale(0.42f);
+            title->setColor({125, 220, 255});
+            m_panel->addChild(title);
+        }
+        auto* cap = cocos2d::CCLabelBMFont::create("MAX 60", "bigFont.fnt");
+        if (cap) {
+            cap->setAnchorPoint({1.f, 0.5f});
+            cap->setPosition({panelW - 10.f, 81.f});
+            cap->setScale(0.27f);
+            cap->setColor({255, 205, 115});
+            m_panel->addChild(cap);
+        }
+        auto* subtitle = cocos2d::CCLabelBMFont::create("INPUT BUFFER  |  RIGHT ALT: HIDE", "bigFont.fnt");
+        if (subtitle) {
+            subtitle->setAnchorPoint({0.f, 0.5f});
+            subtitle->setPosition({11.f, 63.f});
+            subtitle->setScale(0.23f);
+            subtitle->setColor({155, 175, 200});
+            m_panel->addChild(subtitle);
+        }
+        s_bufferHud = cocos2d::CCLabelBMFont::create("STATUS  |  2 TICKS", "bigFont.fnt");
+        if (s_bufferHud) {
+            s_bufferHud->setAnchorPoint({0.f, 0.5f});
+            s_bufferHud->setPosition({11.f, 46.f});
+            s_bufferHud->setScale(0.29f);
+            m_panel->addChild(s_bufferHud);
+        }
+        auto* buttonBg = cocos2d::CCLayerColor::create({24, 43, 63, 255}, panelW - 20.f, 23.f);
+        if (buttonBg) {
+            buttonBg->setPosition({10.f, 5.f});
+            m_panel->addChild(buttonBg);
+        }
+        auto* buttonText = cocos2d::CCLabelBMFont::create("CYCLE PRESET  >", "bigFont.fnt");
+        if (buttonText) {
+            buttonText->setScale(0.31f);
+            s_bufferButtonLabel = buttonText;
+            auto* item = cocos2d::CCMenuItemLabel::create(buttonText, this, menu_selector(SonwareGuiLayer::onSonwareCycle));
+            if (item) {
+                auto* menu = cocos2d::CCMenu::createWithItem(item);
+                if (menu) {
+                    menu->setPosition({panelW * 0.5f, 17.f});
+                    menu->setZOrder(1);
+                    m_panel->addChild(menu);
+                }
+            }
+        }
+
+        // Drag only from the title strip so the cycle button remains clickable.
+        auto listener = cocos2d::EventListenerTouchOneByOne::create();
+        if (listener) {
+            listener->setSwallowTouches(false);
+            listener->onTouchBegan = [this](cocos2d::Touch* touch, cocos2d::Event*) {
+                if (!m_panel || !m_panel->isVisible()) return false;
+                auto local = m_panel->convertToNodeSpace(touch->getLocation());
+                auto panelSize = m_panel->getContentSize();
+                if (local.x < 0.f || local.x > panelSize.width || local.y < panelSize.height - 30.f || local.y > panelSize.height) return false;
+                m_dragging = true;
+                m_lastTouch = touch->getLocation();
+                return true;
+            };
+            listener->onTouchMoved = [this](cocos2d::Touch* touch, cocos2d::Event*) {
+                if (!m_dragging || !m_panel) return;
+                auto now = touch->getLocation();
+                auto pos = m_panel->getPosition();
+                pos.x += now.x - m_lastTouch.x;
+                pos.y += now.y - m_lastTouch.y;
+                m_panel->setPosition(pos);
+                m_lastTouch = now;
+                keepPanelOnScreen();
+            };
+            listener->onTouchEnded = [this](cocos2d::Touch*, cocos2d::Event*) { m_dragging = false; };
+            listener->onTouchCancelled = [this](cocos2d::Touch*, cocos2d::Event*) { m_dragging = false; };
+            this->getEventDispatcher()->addEventListenerWithSceneGraphPriority(listener, this);
+        }
+        refreshBufferHud();
+        return true;
+    }
+
+    void update(float) override {
+        // VK_RMENU is Right Alt on Windows. Edge-detect so holding it doesn't flicker.
+        bool down = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
+        if (down && !m_rightAltWasDown && m_panel) {
+            m_panel->setVisible(!m_panel->isVisible());
+        }
+        m_rightAltWasDown = down;
+    }
+
+    void onSonwareCycle(cocos2d::CCObject*) {
+        s_sim.cyclePreset();
+        refreshBufferHud();
+    }
+
+    void onExit() override {
+        if (s_sonwarePanel == m_panel) {
+            s_sonwarePanel = nullptr;
+            s_bufferHud = nullptr;
+            s_bufferButtonLabel = nullptr;
+        }
+        cocos2d::CCLayer::onExit();
+    }
+};
+
 $on_mod(Loaded) {
     log::info("[SONWARE V2] Predictive Buffer loaded. Default performance preset: Balanced.");
     log::info("[SONWARE V2] Essential event logs are enabled; detailed input logs are disabled by default.");
 }
+
+class $modify(SonwareMenuLayer, MenuLayer) {
+    bool init() {
+        if (!MenuLayer::init()) return false;
+        if (auto* gui = SonwareGuiLayer::create()) this->addChild(gui, 9999);
+        return true;
+    }
+};
 
 class $modify(BufPlayLayer, PlayLayer) {
     static void onModify(auto& self) {
@@ -549,86 +728,9 @@ class $modify(BufPlayLayer, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         s_sim.init();
-        // SONWARE in-level control card: compact, high-contrast, and clickable.
-        // All elements are owned by PlayLayer, so they disappear on level exit.
-        auto size = cocos2d::CCDirector::sharedDirector()->getWinSize();
-        constexpr float panelW = 212.f;
-        constexpr float panelH = 86.f;
-        s_sonwarePanel = cocos2d::CCLayerColor::create({12, 18, 31, 220}, panelW, panelH);
-        if (s_sonwarePanel) {
-            s_sonwarePanel->setAnchorPoint({0.f, 1.f});
-            s_sonwarePanel->setPosition({12.f, size.height - 12.f});
-            s_sonwarePanel->setZOrder(9999);
-            this->addChild(s_sonwarePanel);
-
-            // Cyan accent rail and subtle divider create a distinct dashboard look.
-            auto* accent = cocos2d::CCLayerColor::create({55, 205, 255, 255}, 3.f, panelH);
-            if (accent) {
-                accent->setAnchorPoint({0.f, 0.f});
-                accent->setPosition({0.f, 0.f});
-                s_sonwarePanel->addChild(accent);
-            }
-            auto* divider = cocos2d::CCLayerColor::create({65, 100, 135, 190}, panelW - 18.f, 1.f);
-            if (divider) {
-                divider->setPosition({10.f, 31.f});
-                s_sonwarePanel->addChild(divider);
-            }
-
-            auto* title = cocos2d::CCLabelBMFont::create("SONWARE  /  INPUT BUFFER", "bigFont.fnt");
-            if (title) {
-                title->setAnchorPoint({0.f, 0.5f});
-                title->setPosition({11.f, 70.f});
-                title->setScale(0.34f);
-                title->setColor({125, 220, 255});
-                s_sonwarePanel->addChild(title);
-            }
-
-            auto* cap = cocos2d::CCLabelBMFont::create("MAX 60", "bigFont.fnt");
-            if (cap) {
-                cap->setAnchorPoint({1.f, 0.5f});
-                cap->setPosition({panelW - 9.f, 70.f});
-                cap->setScale(0.25f);
-                cap->setColor({255, 205, 115});
-                s_sonwarePanel->addChild(cap);
-            }
-
-            s_bufferHud = cocos2d::CCLabelBMFont::create("STATUS  •  2 TICKS", "bigFont.fnt");
-            if (s_bufferHud) {
-                s_bufferHud->setAnchorPoint({0.f, 0.5f});
-                s_bufferHud->setPosition({11.f, 48.f});
-                s_bufferHud->setScale(0.30f);
-                s_sonwarePanel->addChild(s_bufferHud);
-            }
-
-            auto* buttonBg = cocos2d::CCLayerColor::create({24, 43, 63, 255}, panelW - 20.f, 23.f);
-            if (buttonBg) {
-                buttonBg->setPosition({10.f, 3.f});
-                s_sonwarePanel->addChild(buttonBg);
-            }
-
-            auto* buttonText = cocos2d::CCLabelBMFont::create("CYCLE PRESET  >", "bigFont.fnt");
-            if (buttonText) {
-                buttonText->setScale(0.31f);
-                s_bufferButtonLabel = buttonText;
-                auto* item = cocos2d::CCMenuItemLabel::create(
-                    buttonText, this, menu_selector(BufPlayLayer::onSonwareCycle));
-                if (item) {
-                    auto* menu = cocos2d::CCMenu::createWithItem(item);
-                    if (menu) {
-                        menu->setPosition({panelW * 0.5f, 15.f});
-                        menu->setZOrder(1);
-                        s_sonwarePanel->addChild(menu);
-                    }
-                }
-            }
-        }
-        refreshBufferHud();
+        // Centered, draggable GUI; also available in the main menu. Right Alt toggles it.
+        if (auto* gui = SonwareGuiLayer::create()) this->addChild(gui, 9999);
         return true;
-    }
-
-    void onSonwareCycle(cocos2d::CCObject*) {
-        s_sim.cyclePreset();
-        refreshBufferHud();
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* gameObject) {
