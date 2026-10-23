@@ -173,6 +173,23 @@ public:
         }
     }
 
+    void selectPreset(int index) {
+        constexpr int normalTicks[] = {2, 4, 8, 16, 24, 32, 48, 54, 60, 0};
+        constexpr int waveTicks[]   = {2, 4, 8,  8, 24, 32, 48, 54, 60, 0};
+        index = std::max(0, std::min(9, index));
+        m_presetIndex = index;
+        m_waitTicks = -1;
+        m_queuedOpposite = false;
+        m_enabled = index != 9;
+        m_maxTicksNormal = normalTicks[index];
+        m_maxTicksWave = waveTicks[index];
+        if (essentialLogsEnabled()) {
+            if (m_enabled) log::info("[SONWARE] Stage {} selected: {} ticks normal / {} ticks wave.",
+                index + 1, m_maxTicksNormal, m_maxTicksWave);
+            else log::info("[SONWARE] Buffer OFF; raw input enabled.");
+        }
+    }
+
     int normalTicks() const { return m_maxTicksNormal; }
     int waveTicks() const { return m_maxTicksWave; }
     bool enabled() const { return m_enabled; }
@@ -513,29 +530,7 @@ static cocos2d::CCLayerColor* s_sonwarePanel = nullptr;
 
 static void refreshBufferButton() {
     if (!s_bufferButtonLabel) return;
-    s_bufferButtonLabel->setString("CYCLE PRESET  >");
-    s_bufferButtonLabel->setColor({145, 235, 255});
-}
-
-static void refreshBufferHud() {
-    if (s_bufferHud) {
-        if (!s_sim.enabled()) {
-            s_bufferHud->setString("STATUS  |  OFF");
-            s_bufferHud->setColor({255, 135, 145});
-        } else {
-            auto normal = s_sim.normalTicks();
-            auto wave = s_sim.waveTicks();
-            auto status = normal == wave
-                ? fmt::format("STATUS  |  {} TICKS", normal)
-                : fmt::format("STATUS  |  {} NORMAL / {} WAVE", normal, wave);
-            s_bufferHud->setString(status.c_str());
-            s_bufferHud->setColor({130, 245, 190});
-        }
-    }
-    refreshBufferButton();
-}
-
-// Shared in-game/menu overlay. Right Alt toggles visibility; drag the title strip to move it.
+  // SONWARE dashboard. Right Alt toggles visibility; drag the title strip to move it.
 class SonwareGuiLayer : public cocos2d::CCLayer {
 protected:
     cocos2d::CCLayerColor* m_panel = nullptr;
@@ -556,6 +551,33 @@ protected:
         m_panel->setPosition(pos);
     }
 
+    cocos2d::CCLabelBMFont* addLabel(const char* text, cocos2d::CCPoint pos, float scale,
+                                     cocos2d::ccColor3B color, cocos2d::CCPoint anchor = {0.f, 0.5f}) {
+        auto* label = cocos2d::CCLabelBMFont::create(text, "bigFont.fnt");
+        if (label) {
+            label->setAnchorPoint(anchor);
+            label->setPosition(pos);
+            label->setScale(scale);
+            label->setColor(color);
+            m_panel->addChild(label);
+        }
+        return label;
+    }
+
+    void addButton(const char* text, cocos2d::CCPoint pos, float scale,
+                   cocos2d::SEL_MenuHandler callback, cocos2d::ccColor3B color = {220, 240, 255}) {
+        auto* label = cocos2d::CCLabelBMFont::create(text, "bigFont.fnt");
+        if (!label) return;
+        label->setScale(scale);
+        label->setColor(color);
+        auto* item = cocos2d::CCMenuItemLabel::create(label, this, callback);
+        if (!item) return;
+        auto* menu = cocos2d::CCMenu::createWithItem(item);
+        if (!menu) return;
+        menu->setPosition(pos);
+        m_panel->addChild(menu, 3);
+    }
+
 public:
     static SonwareGuiLayer* create() {
         auto ret = new SonwareGuiLayer();
@@ -573,15 +595,14 @@ public:
         this->setContentSize(size);
         this->scheduleUpdate();
 
-        // Compact dashboard. Scale it down on smaller game windows so the full
-        // panel and its labels remain inside the visible screen area.
-        constexpr float panelW = 228.f;
-        constexpr float panelH = 98.f;
-        m_panel = cocos2d::CCLayerColor::create({12, 18, 31, 238}, panelW, panelH);
+        // Responsive, wider dashboard. It scales down only when the game window is small.
+        constexpr float panelW = 340.f;
+        constexpr float panelH = 218.f;
+        m_panel = cocos2d::CCLayerColor::create({10, 16, 28, 245}, panelW, panelH);
         if (!m_panel) return true;
         m_panel->setAnchorPoint({0.5f, 0.5f});
-        float availableW = std::max(1.f, size.width - 24.f);
-        float availableH = std::max(1.f, size.height - 24.f);
+        float availableW = std::max(1.f, size.width - 20.f);
+        float availableH = std::max(1.f, size.height - 20.f);
         float uiScale = std::min(1.f, std::min(availableW / panelW, availableH / panelH));
         m_panel->setScale(uiScale);
         m_panel->setPosition({size.width * 0.5f, size.height * 0.5f});
@@ -589,84 +610,56 @@ public:
         this->addChild(m_panel);
         s_sonwarePanel = m_panel;
 
-        auto* accent = cocos2d::CCLayerColor::create({55, 205, 255, 255}, 3.f, panelH);
-        if (accent) {
-            accent->setAnchorPoint({0.f, 0.f});
-            accent->setPosition({0.f, 0.f});
-            m_panel->addChild(accent);
+        auto* accent = cocos2d::CCLayerColor::create({40, 205, 255, 255}, 4.f, panelH);
+        if (accent) m_panel->addChild(accent);
+        auto* topLine = cocos2d::CCLayerColor::create({40, 205, 255, 255}, panelW - 8.f, 2.f);
+        if (topLine) {
+            topLine->setPosition({4.f, panelH - 4.f});
+            m_panel->addChild(topLine);
         }
-        auto* divider = cocos2d::CCLayerColor::create({65, 100, 135, 190}, panelW - 20.f, 1.f);
-        if (divider) {
-            divider->setPosition({10.f, 33.f});
-            m_panel->addChild(divider);
+        auto* divider1 = cocos2d::CCLayerColor::create({55, 85, 112, 210}, panelW - 24.f, 1.f);
+        if (divider1) {
+            divider1->setPosition({12.f, 165.f});
+            m_panel->addChild(divider1);
         }
-        auto* title = cocos2d::CCLabelBMFont::create("SONWARE", "bigFont.fnt");
-        if (title) {
-            title->setAnchorPoint({0.f, 0.5f});
-            title->setPosition({11.f, 81.f});
-            title->setScale(0.42f);
-            title->setColor({125, 220, 255});
-            m_panel->addChild(title);
-        }
-        auto* cap = cocos2d::CCLabelBMFont::create("MAX 60", "bigFont.fnt");
-        if (cap) {
-            cap->setAnchorPoint({1.f, 0.5f});
-            cap->setPosition({panelW - 10.f, 81.f});
-            cap->setScale(0.27f);
-            cap->setColor({255, 205, 115});
-            m_panel->addChild(cap);
-        }
-        auto* subtitle = cocos2d::CCLabelBMFont::create("INPUT BUFFER  |  RIGHT ALT: HIDE", "bigFont.fnt");
-        if (subtitle) {
-            subtitle->setAnchorPoint({0.f, 0.5f});
-            subtitle->setPosition({11.f, 63.f});
-            subtitle->setScale(0.23f);
-            subtitle->setColor({155, 175, 200});
-            m_panel->addChild(subtitle);
-        }
-        s_bufferHud = cocos2d::CCLabelBMFont::create("STATUS  |  2 TICKS", "bigFont.fnt");
-        if (s_bufferHud) {
-            s_bufferHud->setAnchorPoint({0.f, 0.5f});
-            s_bufferHud->setPosition({11.f, 46.f});
-            s_bufferHud->setScale(0.29f);
-            m_panel->addChild(s_bufferHud);
-        }
-        auto* buttonBg = cocos2d::CCLayerColor::create({24, 43, 63, 255}, panelW - 20.f, 23.f);
-        if (buttonBg) {
-            buttonBg->setPosition({10.f, 5.f});
-            m_panel->addChild(buttonBg);
-        }
-        auto* buttonText = cocos2d::CCLabelBMFont::create("CYCLE PRESET  >", "bigFont.fnt");
-        if (buttonText) {
-            buttonText->setScale(0.31f);
-            s_bufferButtonLabel = buttonText;
-            auto* item = cocos2d::CCMenuItemLabel::create(buttonText, this, menu_selector(SonwareGuiLayer::onSonwareCycle));
-            if (item) {
-                auto* menu = cocos2d::CCMenu::createWithItem(item);
-                if (menu) {
-                    menu->setPosition({panelW * 0.5f, 17.f});
-                    menu->setZOrder(1);
-                    m_panel->addChild(menu);
-                }
-            }
+        auto* divider2 = cocos2d::CCLayerColor::create({55, 85, 112, 210}, panelW - 24.f, 1.f);
+        if (divider2) {
+            divider2->setPosition({12.f, 76.f});
+            m_panel->addChild(divider2);
         }
 
-        // Dragging is handled by lightweight Windows mouse polling in update().
-        // This avoids Cocos2d touch-listener APIs that are not available in this Geode build.
+        addLabel("SONWARE", {14.f, 198.f}, 0.52f, {125, 225, 255});
+        addLabel("MASTER ASSIST DASHBOARD", {15.f, 179.f}, 0.24f, {150, 175, 202});
+        auto* hideHint = addLabel("RIGHT ALT  •  HIDE", {panelW - 12.f, 198.f}, 0.22f, {255, 205, 125}, {1.f, 0.5f});
+        (void)hideHint;
+
+        addLabel("BUFFER STAGES", {14.f, 151.f}, 0.28f, {135, 215, 255});
+        // Stage cycling stays connected to the existing, working buffer engine.
+        // F6 and the button both cycle the active stage.
+        const float stageY = 126.f;
+        addButton("STAGE 1", {58.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage1));
+        addButton("STAGE 2", {132.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage2));
+        addButton("STAGE 3", {206.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage3));
+        addButton("STAGE 4", {282.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage4));
+        addButton("EXTREME", {91.f, 99.f}, 0.30f, menu_selector(SonwareGuiLayer::onExtreme), {255, 190, 105});
+        addButton("CUSTOM / CYCLE", {245.f, 99.f}, 0.27f, menu_selector(SonwareGuiLayer::onSonwareCycle), {130, 240, 205});
+
+        s_bufferHud = addLabel("STATUS  |  2 TICKS", {14.f, 58.f}, 0.31f, {130, 245, 190});
+        addLabel("ASSIST MODULES", {14.f, 39.f}, 0.25f, {135, 215, 255});
+        addLabel("Orb Helper: not enabled in this build", {14.f, 23.f}, 0.22f, {170, 190, 210});
+        addLabel("Auto-click: not enabled in this build", {14.f, 9.f}, 0.22f, {170, 190, 210});
+
         refreshBufferHud();
         return true;
     }
 
     void update(float) override {
-        // Right Alt toggles visibility on the key-down edge.
         bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
         if (rightAltDown && !m_rightAltWasDown && m_panel) {
             m_panel->setVisible(!m_panel->isVisible());
         }
         m_rightAltWasDown = rightAltDown;
 
-        // Poll the Windows mouse once per frame rather than using unavailable
-        // cocos2d touch classes. This adds no scanning work to the buffer logic.
         bool leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         HWND hwnd = GetForegroundWindow();
         POINT cursor{};
@@ -683,17 +676,45 @@ public:
                 static_cast<float>(cursor.x) * winSize.width / clientW,
                 (clientH - static_cast<float>(cursor.y)) * winSize.height / clientH
             };
-
             if (leftDown && !m_leftWasDown && m_panel && m_panel->isVisible()) {
                 auto local = m_panel->convertToNodeSpace(mousePos);
                 auto panelSize = m_panel->getContentSize();
-                // Drag only from the title strip, keeping the preset button clickable.
                 if (local.x >= 0.f && local.x <= panelSize.width &&
                     local.y >= panelSize.height - 30.f && local.y <= panelSize.height) {
                     m_dragging = true;
                     m_lastMouse = mousePos;
                 }
             } else if (leftDown && m_dragging && m_panel) {
+                auto pos = m_panel->getPosition();
+                pos.x += mousePos.x - m_lastMouse.x;
+                pos.y += mousePos.y - m_lastMouse.y;
+                m_panel->setPosition(pos);
+                m_lastMouse = mousePos;
+                keepPanelOnScreen();
+            }
+        }
+        if (!leftDown) m_dragging = false;
+        m_leftWasDown = leftDown;
+    }
+
+    void onStage1(cocos2d::CCObject*) { s_sim.selectPreset(0); refreshBufferHud(); }
+    void onStage2(cocos2d::CCObject*) { s_sim.selectPreset(1); refreshBufferHud(); }
+    void onStage3(cocos2d::CCObject*) { s_sim.selectPreset(2); refreshBufferHud(); }
+    void onStage4(cocos2d::CCObject*) { s_sim.selectPreset(3); refreshBufferHud(); }
+    void onExtreme(cocos2d::CCObject*) { s_sim.selectPreset(8); refreshBufferHud(); }
+    void onSonwareCycle(cocos2d::CCObject*) { s_sim.cyclePreset(); refreshBufferHud(); }
+
+    void onExit() override {
+        if (s_sonwarePanel == m_panel) {
+            s_sonwarePanel = nullptr;
+            s_bufferHud = nullptr;
+            s_bufferButtonLabel = nullptr;
+        }
+        cocos2d::CCLayer::onExit();
+    }
+};
+
+{
                 auto pos = m_panel->getPosition();
                 pos.x += mousePos.x - m_lastMouse.x;
                 pos.y += mousePos.y - m_lastMouse.y;
@@ -723,7 +744,7 @@ public:
 };
 
 $on_mod(Loaded) {
-    log::info("[SONWARE V2] Predictive Buffer loaded. Default performance preset: Balanced.");
+    log::info("[SONWARE V2] Predictive Buffer loaded. Dashboard loaded; Balanced performance preset active.");
     log::info("[SONWARE V2] Essential event logs are enabled; detailed input logs are disabled by default.");
 }
 
