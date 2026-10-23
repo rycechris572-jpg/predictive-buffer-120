@@ -541,7 +541,8 @@ protected:
     cocos2d::CCLayerColor* m_panel = nullptr;
     bool m_rightAltWasDown = false;
     bool m_dragging = false;
-    cocos2d::CCPoint m_lastTouch = {0.f, 0.f};
+    bool m_leftWasDown = false;
+    cocos2d::CCPoint m_lastMouse = {0.f, 0.f};
 
     void keepPanelOnScreen() {
         if (!m_panel) return;
@@ -650,44 +651,60 @@ public:
             }
         }
 
-        // Drag only from the title strip so the cycle button remains clickable.
-        auto listener = cocos2d::EventListenerTouchOneByOne::create();
-        if (listener) {
-            listener->setSwallowTouches(false);
-            listener->onTouchBegan = [this](cocos2d::Touch* touch, cocos2d::Event*) {
-                if (!m_panel || !m_panel->isVisible()) return false;
-                auto local = m_panel->convertToNodeSpace(touch->getLocation());
-                auto panelSize = m_panel->getContentSize();
-                if (local.x < 0.f || local.x > panelSize.width || local.y < panelSize.height - 30.f || local.y > panelSize.height) return false;
-                m_dragging = true;
-                m_lastTouch = touch->getLocation();
-                return true;
-            };
-            listener->onTouchMoved = [this](cocos2d::Touch* touch, cocos2d::Event*) {
-                if (!m_dragging || !m_panel) return;
-                auto now = touch->getLocation();
-                auto pos = m_panel->getPosition();
-                pos.x += now.x - m_lastTouch.x;
-                pos.y += now.y - m_lastTouch.y;
-                m_panel->setPosition(pos);
-                m_lastTouch = now;
-                keepPanelOnScreen();
-            };
-            listener->onTouchEnded = [this](cocos2d::Touch*, cocos2d::Event*) { m_dragging = false; };
-            listener->onTouchCancelled = [this](cocos2d::Touch*, cocos2d::Event*) { m_dragging = false; };
-            this->getEventDispatcher()->addEventListenerWithSceneGraphPriority(listener, this);
-        }
+        // Dragging is handled by lightweight Windows mouse polling in update().
+        // This avoids Cocos2d touch-listener APIs that are not available in this Geode build.
         refreshBufferHud();
         return true;
     }
 
     void update(float) override {
-        // VK_RMENU is Right Alt on Windows. Edge-detect so holding it doesn't flicker.
-        bool down = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
-        if (down && !m_rightAltWasDown && m_panel) {
+        // Right Alt toggles visibility on the key-down edge.
+        bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
+        if (rightAltDown && !m_rightAltWasDown && m_panel) {
             m_panel->setVisible(!m_panel->isVisible());
         }
-        m_rightAltWasDown = down;
+        m_rightAltWasDown = rightAltDown;
+
+        // Poll the Windows mouse once per frame rather than using unavailable
+        // cocos2d touch classes. This adds no scanning work to the buffer logic.
+        bool leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        HWND hwnd = GetForegroundWindow();
+        POINT cursor{};
+        RECT client{};
+        auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
+        bool haveMouse = hwnd && GetCursorPos(&cursor) && ScreenToClient(hwnd, &cursor) &&
+                         GetClientRect(hwnd, &client) &&
+                         (client.right - client.left) > 0 && (client.bottom - client.top) > 0;
+
+        if (haveMouse) {
+            float clientW = static_cast<float>(client.right - client.left);
+            float clientH = static_cast<float>(client.bottom - client.top);
+            cocos2d::CCPoint mousePos{
+                static_cast<float>(cursor.x) * winSize.width / clientW,
+                (clientH - static_cast<float>(cursor.y)) * winSize.height / clientH
+            };
+
+            if (leftDown && !m_leftWasDown && m_panel && m_panel->isVisible()) {
+                auto local = m_panel->convertToNodeSpace(mousePos);
+                auto panelSize = m_panel->getContentSize();
+                // Drag only from the title strip, keeping the preset button clickable.
+                if (local.x >= 0.f && local.x <= panelSize.width &&
+                    local.y >= panelSize.height - 30.f && local.y <= panelSize.height) {
+                    m_dragging = true;
+                    m_lastMouse = mousePos;
+                }
+            } else if (leftDown && m_dragging && m_panel) {
+                auto pos = m_panel->getPosition();
+                pos.x += mousePos.x - m_lastMouse.x;
+                pos.y += mousePos.y - m_lastMouse.y;
+                m_panel->setPosition(pos);
+                m_lastMouse = mousePos;
+                keepPanelOnScreen();
+            }
+        }
+
+        if (!leftDown) m_dragging = false;
+        m_leftWasDown = leftDown;
     }
 
     void onSonwareCycle(cocos2d::CCObject*) {
