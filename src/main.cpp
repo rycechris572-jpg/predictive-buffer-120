@@ -606,6 +606,11 @@ protected:
         if (label) {
             label->setAnchorPoint(anchor);
             label->setPosition(pos);
+            // Prevent text from spilling outside the panel, even at different font sizes.
+            float maxWidth = (anchor.x > 0.5f) ? pos.x - 8.f : std::max(12.f, m_panel->getContentSize().width - pos.x - 12.f);
+            float naturalWidth = label->getContentSize().width * scale;
+            if (naturalWidth > maxWidth && naturalWidth > 0.f)
+                scale *= maxWidth / naturalWidth;
             label->setScale(scale);
             label->setColor(color);
             m_panel->addChild(label);
@@ -617,6 +622,10 @@ protected:
                    cocos2d::SEL_MenuHandler callback, cocos2d::ccColor3B color = {220, 240, 255}) {
         auto* label = cocos2d::CCLabelBMFont::create(text, "bigFont.fnt");
         if (!label) return;
+        // Keep every button caption within its tile.
+        float maxTextW = 120.f;
+        float actualW = label->getContentSize().width * scale;
+        if (actualW > maxTextW && actualW > 0.f) scale *= maxTextW / actualW;
         label->setScale(scale);
         label->setColor(color);
         auto* item = cocos2d::CCMenuItemLabel::create(label, this, callback);
@@ -644,60 +653,61 @@ public:
         this->setContentSize(size);
         this->scheduleUpdate();
 
-        // Responsive, wider dashboard. It scales down only when the game window is small.
-        constexpr float panelW = 340.f;
-        constexpr float panelH = 218.f;
-        m_panel = cocos2d::CCLayerColor::create({10, 16, 28, 245}, panelW, panelH);
-        if (!m_panel) return true;
+        // SONWARE purple dashboard: compact sidebar, readable controls, no overlap.
+        constexpr float panelW = 440.f;
+        constexpr float panelH = 262.f;
+        m_panel = cocos2d::CCLayerColor::create({13, 10, 24, 247}, panelW, panelH);
+        if (!m_panel) return false;
         m_panel->setAnchorPoint({0.5f, 0.5f});
-        float availableW = std::max(1.f, size.width - 20.f);
-        float availableH = std::max(1.f, size.height - 20.f);
+        float availableW = std::max(1.f, size.width - 16.f);
+        float availableH = std::max(1.f, size.height - 16.f);
         float uiScale = std::min(1.f, std::min(availableW / panelW, availableH / panelH));
         m_panel->setScale(uiScale);
         m_panel->setPosition({size.width * 0.5f, size.height * 0.5f});
-        m_panel->setZOrder(9999);
-        this->addChild(m_panel);
+        this->addChild(m_panel, 9999);
         s_sonwarePanel = m_panel;
 
-        auto* accent = cocos2d::CCLayerColor::create({40, 205, 255, 255}, 4.f, panelH);
-        if (accent) m_panel->addChild(accent);
-        auto* topLine = cocos2d::CCLayerColor::create({40, 205, 255, 255}, panelW - 8.f, 2.f);
-        if (topLine) {
-            topLine->setPosition({4.f, panelH - 4.f});
-            m_panel->addChild(topLine);
-        }
-        auto* divider1 = cocos2d::CCLayerColor::create({55, 85, 112, 210}, panelW - 24.f, 1.f);
-        if (divider1) {
-            divider1->setPosition({12.f, 165.f});
-            m_panel->addChild(divider1);
-        }
-        auto* divider2 = cocos2d::CCLayerColor::create({55, 85, 112, 210}, panelW - 24.f, 1.f);
-        if (divider2) {
-            divider2->setPosition({12.f, 76.f});
-            m_panel->addChild(divider2);
-        }
+        auto rect = [&](float x, float y, float w, float h, cocos2d::ccColor4B color) {
+            auto* layer = cocos2d::CCLayerColor::create(color, w, h);
+            if (layer) { layer->setPosition({x, y}); m_panel->addChild(layer); }
+        };
+        // Flat layers and subtle purple accents avoid expensive blur effects.
+        rect(0.f, 0.f, 111.f, panelH, {24, 17, 44, 255});
+        rect(0.f, panelH - 3.f, panelW, 3.f, {166, 98, 255, 255});
+        rect(110.f, 0.f, 1.f, panelH, {89, 61, 133, 255});
+        rect(122.f, 218.f, 306.f, 1.f, {75, 52, 109, 255});
+        rect(122.f, 66.f, 306.f, 1.f, {75, 52, 109, 255});
 
-        addLabel("SONWARE", {14.f, 198.f}, 0.52f, {125, 225, 255});
-        addLabel("MASTER ASSIST DASHBOARD", {15.f, 179.f}, 0.24f, {150, 175, 202});
-        auto* hideHint = addLabel("RIGHT ALT  •  HIDE", {panelW - 12.f, 198.f}, 0.22f, {255, 205, 125}, {1.f, 0.5f});
-        (void)hideHint;
+        addLabel("SONWARE", {12.f, 235.f}, 0.39f, {217, 181, 255});
+        addLabel("CONTROL PANEL", {12.f, 219.f}, 0.19f, {152, 132, 185});
+        addLabel("DASHBOARD", {12.f, 179.f}, 0.25f, {219, 204, 246});
+        addLabel("STAGES", {12.f, 155.f}, 0.25f, {219, 204, 246});
+        addLabel("CONSOLE", {12.f, 131.f}, 0.25f, {219, 204, 246});
+        addLabel("RIGHT ALT", {12.f, 42.f}, 0.22f, {176, 146, 213});
+        addLabel("HIDE / SHOW", {12.f, 28.f}, 0.19f, {142, 123, 171});
 
-        addLabel("BUFFER STAGES", {14.f, 151.f}, 0.28f, {135, 215, 255});
-        // Stage cycling stays connected to the existing, working buffer engine.
-        // F6 and the button both cycle the active stage.
-        const float stageY = 126.f;
-        addButton("STAGE 1", {58.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage1));
-        addButton("STAGE 2", {132.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage2));
-        addButton("STAGE 3", {206.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage3));
-        addButton("STAGE 4", {282.f, stageY}, 0.27f, menu_selector(SonwareGuiLayer::onStage4));
-        addButton("EXTREME", {91.f, 99.f}, 0.30f, menu_selector(SonwareGuiLayer::onExtreme), {255, 190, 105});
-        addButton("CUSTOM / CYCLE", {245.f, 99.f}, 0.27f, menu_selector(SonwareGuiLayer::onSonwareCycle), {130, 240, 205});
+        addLabel("BUFFER CONTROL", {124.f, 240.f}, 0.38f, {234, 213, 255});
+        addLabel("Choose an active simulation stage", {124.f, 226.f}, 0.19f, {160, 147, 180});
 
-        s_bufferHud = addLabel("STATUS  |  2 TICKS", {14.f, 58.f}, 0.31f, {130, 245, 190});
-        addLabel("ASSIST MODULES", {14.f, 39.f}, 0.25f, {135, 215, 255});
-        addLabel("Orb Helper: not enabled in this build", {14.f, 23.f}, 0.22f, {170, 190, 210});
-        addButton("OPEN CONSOLE", {256.f, 40.f}, 0.24f, menu_selector(SonwareGuiLayer::onConsole), {255, 215, 135});
-        addLabel("Auto-click: not enabled in this build", {14.f, 9.f}, 0.22f, {170, 190, 210});
+        // Two-column stage grid: labels stay centered inside their backgrounds.
+        rect(124.f, 170.f, 144.f, 38.f, {49, 35, 77, 255});
+        rect(279.f, 170.f, 144.f, 38.f, {49, 35, 77, 255});
+        rect(124.f, 126.f, 144.f, 38.f, {49, 35, 77, 255});
+        rect(279.f, 126.f, 144.f, 38.f, {49, 35, 77, 255});
+        rect(124.f, 82.f, 144.f, 38.f, {69, 40, 91, 255});
+        rect(279.f, 82.f, 144.f, 38.f, {44, 50, 76, 255});
+        addButton("STAGE 1", {196.f, 189.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage1));
+        addButton("STAGE 2", {351.f, 189.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage2));
+        addButton("STAGE 3", {196.f, 145.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage3));
+        addButton("STAGE 4", {351.f, 145.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage4));
+        addButton("EXTREME", {196.f, 101.f}, 0.33f, menu_selector(SonwareGuiLayer::onExtreme), {255, 189, 226});
+        // This still cycles presets, not an editable custom stage.
+        addButton("CYCLE STAGE", {351.f, 101.f}, 0.30f, menu_selector(SonwareGuiLayer::onSonwareCycle), {191, 221, 255});
+
+        s_bufferHud = addLabel("STATUS | 2 TICKS", {124.f, 53.f}, 0.29f, {170, 242, 193});
+        rect(279.f, 17.f, 144.f, 35.f, {71, 43, 109, 255});
+        addButton("OPEN CONSOLE", {351.f, 34.f}, 0.27f, menu_selector(SonwareGuiLayer::onConsole), {242, 217, 255});
+        addLabel("Orb / Auto-click: unavailable", {124.f, 26.f}, 0.19f, {160, 147, 180});
 
         refreshBufferHud();
         return true;
