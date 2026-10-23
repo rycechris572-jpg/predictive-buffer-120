@@ -524,7 +524,7 @@ public:
 };
 
 static TrajectoryBufferSim s_sim;
-static cocos2d::CCLabelBMFont* s_bufferHud = nullptr;
+static cocos2d::CCLabelTTF* s_bufferHud = nullptr;
 static cocos2d::CCLabelBMFont* s_bufferButtonLabel = nullptr;
 static cocos2d::CCLayerColor* s_sonwarePanel = nullptr;
 
@@ -579,7 +579,7 @@ static void refreshBufferHud() {
     refreshBufferButton();
 }
 
-// SONWARE dashboard. Right Alt toggles visibility; drag the title strip to move it.
+// SONWARE desktop-inspired dashboard. System Segoe UI font, not Geometry Dash bitmap fonts.
 class SonwareGuiLayer : public cocos2d::CCLayer {
 protected:
     cocos2d::CCLayerColor* m_panel = nullptr;
@@ -587,130 +587,120 @@ protected:
     bool m_dragging = false;
     bool m_leftWasDown = false;
     cocos2d::CCPoint m_lastMouse = {0.f, 0.f};
+    static constexpr float W = 490.f;
+    static constexpr float H = 286.f;
+
+    void rect(float x, float y, float w, float h, cocos2d::ccColor4B color, int z = 0) {
+        auto* node = cocos2d::CCLayerColor::create(color, w, h);
+        if (node) { node->setPosition({x, y}); m_panel->addChild(node, z); }
+    }
+
+    cocos2d::CCLabelTTF* label(const char* str, float x, float y, float fontSize,
+                               cocos2d::ccColor3B color, float maxWidth = 0.f,
+                               cocos2d::CCPoint anchor = {0.f, 0.5f}) {
+        auto* node = cocos2d::CCLabelTTF::create(str, "Segoe UI", fontSize);
+        if (!node) return nullptr;
+        node->setAnchorPoint(anchor);
+        node->setPosition({x, y});
+        node->setColor(color);
+        if (maxWidth > 0.f && node->getContentSize().width > maxWidth)
+            node->setScale(maxWidth / node->getContentSize().width);
+        m_panel->addChild(node, 5);
+        return node;
+    }
+
+    void button(const char* caption, float x, float y, float w, float h,
+                cocos2d::SEL_MenuHandler cb, bool accent = false) {
+        rect(x, y, w, h, accent ? cocos2d::ccc4(90, 49, 155, 255) : cocos2d::ccc4(38, 32, 58, 255), 1);
+        rect(x, y + h - 1.f, w, 1.f, accent ? cocos2d::ccc4(171, 116, 252, 255) : cocos2d::ccc4(72, 61, 99, 255), 2);
+        auto* title = cocos2d::CCLabelTTF::create(caption, "Segoe UI", 12.f);
+        if (!title) return;
+        title->setColor({244, 239, 255});
+        if (title->getContentSize().width > w - 14.f)
+            title->setScale((w - 14.f) / title->getContentSize().width);
+        auto* item = cocos2d::CCMenuItemLabel::create(title, this, cb);
+        if (!item) return;
+        auto* menu = cocos2d::CCMenu::createWithItem(item);
+        if (!menu) return;
+        menu->setPosition({x + w * 0.5f, y + h * 0.5f});
+        m_panel->addChild(menu, 6);
+    }
 
     void keepPanelOnScreen() {
         if (!m_panel) return;
         auto size = cocos2d::CCDirector::sharedDirector()->getWinSize();
         auto pos = m_panel->getPosition();
-        auto panelSize = m_panel->getContentSize();
-        float halfW = panelSize.width * m_panel->getScaleX() * 0.5f;
-        float halfH = panelSize.height * m_panel->getScaleY() * 0.5f;
-        pos.x = std::max(halfW + 6.f, std::min(size.width - halfW - 6.f, pos.x));
-        pos.y = std::max(halfH + 6.f, std::min(size.height - halfH - 6.f, pos.y));
+        float halfW = W * m_panel->getScaleX() * .5f;
+        float halfH = H * m_panel->getScaleY() * .5f;
+        pos.x = std::max(halfW + 4.f, std::min(size.width - halfW - 4.f, pos.x));
+        pos.y = std::max(halfH + 4.f, std::min(size.height - halfH - 4.f, pos.y));
         m_panel->setPosition(pos);
-    }
-
-    cocos2d::CCLabelBMFont* addLabel(const char* text, cocos2d::CCPoint pos, float scale,
-                                     cocos2d::ccColor3B color, cocos2d::CCPoint anchor = {0.f, 0.5f}) {
-        auto* label = cocos2d::CCLabelBMFont::create(text, "bigFont.fnt");
-        if (label) {
-            label->setAnchorPoint(anchor);
-            label->setPosition(pos);
-            // Prevent text from spilling outside the panel, even at different font sizes.
-            float maxWidth = (anchor.x > 0.5f) ? pos.x - 8.f : std::max(12.f, m_panel->getContentSize().width - pos.x - 12.f);
-            float naturalWidth = label->getContentSize().width * scale;
-            if (naturalWidth > maxWidth && naturalWidth > 0.f)
-                scale *= maxWidth / naturalWidth;
-            label->setScale(scale);
-            label->setColor(color);
-            m_panel->addChild(label);
-        }
-        return label;
-    }
-
-    void addButton(const char* text, cocos2d::CCPoint pos, float scale,
-                   cocos2d::SEL_MenuHandler callback, cocos2d::ccColor3B color = {220, 240, 255}) {
-        auto* label = cocos2d::CCLabelBMFont::create(text, "bigFont.fnt");
-        if (!label) return;
-        // Keep every button caption within its tile.
-        float maxTextW = 120.f;
-        float actualW = label->getContentSize().width * scale;
-        if (actualW > maxTextW && actualW > 0.f) scale *= maxTextW / actualW;
-        label->setScale(scale);
-        label->setColor(color);
-        auto* item = cocos2d::CCMenuItemLabel::create(label, this, callback);
-        if (!item) return;
-        auto* menu = cocos2d::CCMenu::createWithItem(item);
-        if (!menu) return;
-        menu->setPosition(pos);
-        m_panel->addChild(menu, 3);
     }
 
 public:
     static SonwareGuiLayer* create() {
-        auto ret = new SonwareGuiLayer();
-        if (ret && ret->init()) {
-            ret->autorelease();
-            return ret;
-        }
+        auto* ret = new SonwareGuiLayer();
+        if (ret && ret->init()) { ret->autorelease(); return ret; }
         CC_SAFE_DELETE(ret);
         return nullptr;
     }
 
     bool init() override {
         if (!cocos2d::CCLayer::init()) return false;
-        auto size = cocos2d::CCDirector::sharedDirector()->getWinSize();
-        this->setContentSize(size);
+        auto win = cocos2d::CCDirector::sharedDirector()->getWinSize();
+        this->setContentSize(win);
         this->scheduleUpdate();
-
-        // SONWARE purple dashboard: compact sidebar, readable controls, no overlap.
-        constexpr float panelW = 440.f;
-        constexpr float panelH = 262.f;
-        m_panel = cocos2d::CCLayerColor::create({13, 10, 24, 247}, panelW, panelH);
+        m_panel = cocos2d::CCLayerColor::create({14, 13, 23, 255}, W, H);
         if (!m_panel) return false;
         m_panel->ignoreAnchorPointForPosition(false);
-        m_panel->setAnchorPoint({0.5f, 0.5f});
-        float availableW = std::max(1.f, size.width - 16.f);
-        float availableH = std::max(1.f, size.height - 16.f);
-        float uiScale = std::min(1.f, std::min(availableW / panelW, availableH / panelH));
-        m_panel->setScale(uiScale);
-        m_panel->setPosition({size.width * 0.5f, size.height * 0.5f});
+        m_panel->setAnchorPoint({.5f, .5f});
+        float scale = std::min(1.f, std::min((win.width - 12.f) / W, (win.height - 12.f) / H));
+        m_panel->setScale(std::max(.1f, scale));
+        m_panel->setPosition({win.width * .5f, win.height * .5f});
         this->addChild(m_panel, 9999);
         s_sonwarePanel = m_panel;
 
-        auto rect = [&](float x, float y, float w, float h, cocos2d::ccColor4B color) {
-            auto* layer = cocos2d::CCLayerColor::create(color, w, h);
-            if (layer) { layer->setPosition({x, y}); m_panel->addChild(layer); }
-        };
-        // Flat layers and subtle purple accents avoid expensive blur effects.
-        rect(0.f, 0.f, 111.f, panelH, {24, 17, 44, 255});
-        rect(0.f, panelH - 3.f, panelW, 3.f, {166, 98, 255, 255});
-        // Drag handle spans the top title bar. All positions are panel-local.
-        rect(110.f, 0.f, 1.f, panelH, {89, 61, 133, 255});
-        rect(122.f, 218.f, 306.f, 1.f, {75, 52, 109, 255});
-        rect(122.f, 66.f, 306.f, 1.f, {75, 52, 109, 255});
+        // Desktop-style opaque frame, purple border and slim title bar.
+        rect(0, 0, W, 1, {129, 80, 210, 255});
+        rect(0, H-1, W, 1, {129, 80, 210, 255});
+        rect(0, 0, 1, H, {129, 80, 210, 255});
+        rect(W-1, 0, 1, H, {129, 80, 210, 255});
+        rect(1, H-37, W-2, 36, {23, 19, 37, 255});
+        rect(1, 1, 116, H-39, {21, 18, 33, 255});
+        rect(117, 1, 1, H-39, {53, 42, 79, 255});
+        rect(0, H-38, W, 1, {65, 47, 100, 255});
+        rect(12, H-28, 3, 16, {166, 105, 255, 255});
+        label("SONWARE", 22, H-20, 17, {241, 229, 255}, 150);
+        label("PREDICTIVE BUFFER", 144, H-20, 10, {149, 134, 174}, 180);
+        label("Right Alt  •  Hide / Show", W-12, H-20, 9, {161, 146, 188}, 126, {1.f,.5f});
 
-        addLabel("SONWARE", {12.f, 235.f}, 0.39f, {217, 181, 255});
-        addLabel("CONTROL PANEL", {12.f, 219.f}, 0.19f, {152, 132, 185});
-        addLabel("DASHBOARD", {12.f, 179.f}, 0.25f, {219, 204, 246});
-        addLabel("STAGES", {12.f, 155.f}, 0.25f, {219, 204, 246});
-        addLabel("CONSOLE", {12.f, 131.f}, 0.25f, {219, 204, 246});
-        addLabel("RIGHT ALT", {12.f, 42.f}, 0.22f, {176, 146, 213});
-        addLabel("HIDE / SHOW", {12.f, 28.f}, 0.19f, {142, 123, 171});
+        label("NAVIGATION", 14, 221, 9, {128, 113, 157}, 95);
+        rect(8, 183, 100, 28, {63, 39, 104, 255});
+        rect(8, 183, 3, 28, {172, 111, 255, 255});
+        label("Dashboard", 19, 197, 12, {244, 236, 255}, 84);
+        label("Stages", 19, 163, 11, {179, 168, 198}, 84);
+        label("Console", 19, 133, 11, {179, 168, 198}, 84);
+        rect(13, 55, 90, 1, {60, 48, 82, 255});
+        label("SONWARE", 14, 37, 10, {164, 114, 239}, 90);
+        label("Windows  •  Geode", 14, 21, 9, {136, 125, 159}, 90);
 
-        addLabel("BUFFER CONTROL", {124.f, 240.f}, 0.38f, {234, 213, 255});
-        addLabel("Choose an active simulation stage", {124.f, 226.f}, 0.19f, {160, 147, 180});
+        label("Stage control", 133, 226, 18, {239, 233, 250}, 195);
+        label("Choose a simulation preset", 133, 206, 10, {152, 140, 174}, 230);
+        // Six equal tiles, all captions centered and auto-fit to their tiles.
+        constexpr float bw = 106.f;
+        constexpr float bh = 40.f;
+        button("STAGE 1", 133, 150, bw, bh, menu_selector(SonwareGuiLayer::onStage1));
+        button("STAGE 2", 247, 150, bw, bh, menu_selector(SonwareGuiLayer::onStage2));
+        button("STAGE 3", 361, 150, bw, bh, menu_selector(SonwareGuiLayer::onStage3));
+        button("STAGE 4", 133, 101, bw, bh, menu_selector(SonwareGuiLayer::onStage4));
+        button("EXTREME", 247, 101, bw, bh, menu_selector(SonwareGuiLayer::onExtreme), true);
+        button("CYCLE PRESET", 361, 101, bw, bh, menu_selector(SonwareGuiLayer::onSonwareCycle));
 
-        // Two-column stage grid: labels stay centered inside their backgrounds.
-        rect(124.f, 170.f, 144.f, 38.f, {49, 35, 77, 255});
-        rect(279.f, 170.f, 144.f, 38.f, {49, 35, 77, 255});
-        rect(124.f, 126.f, 144.f, 38.f, {49, 35, 77, 255});
-        rect(279.f, 126.f, 144.f, 38.f, {49, 35, 77, 255});
-        rect(124.f, 82.f, 144.f, 38.f, {69, 40, 91, 255});
-        rect(279.f, 82.f, 144.f, 38.f, {44, 50, 76, 255});
-        addButton("STAGE 1", {196.f, 189.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage1));
-        addButton("STAGE 2", {351.f, 189.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage2));
-        addButton("STAGE 3", {196.f, 145.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage3));
-        addButton("STAGE 4", {351.f, 145.f}, 0.33f, menu_selector(SonwareGuiLayer::onStage4));
-        addButton("EXTREME", {196.f, 101.f}, 0.33f, menu_selector(SonwareGuiLayer::onExtreme), {255, 189, 226});
-        // This still cycles presets, not an editable custom stage.
-        addButton("CYCLE STAGE", {351.f, 101.f}, 0.30f, menu_selector(SonwareGuiLayer::onSonwareCycle), {191, 221, 255});
-
-        s_bufferHud = addLabel("STATUS | 2 TICKS", {124.f, 53.f}, 0.29f, {170, 242, 193});
-        rect(279.f, 17.f, 144.f, 35.f, {71, 43, 109, 255});
-        addButton("OPEN CONSOLE", {351.f, 34.f}, 0.27f, menu_selector(SonwareGuiLayer::onConsole), {242, 217, 255});
-        addLabel("Orb / Auto-click: unavailable", {124.f, 26.f}, 0.19f, {160, 147, 180});
-
+        rect(133, 84, 334, 1, {62, 49, 87, 255});
+        s_bufferHud = label("STATUS  |  2 TICKS", 133, 65, 11, {139, 238, 189}, 318);
+        label("Orb helper / Auto-click: unavailable", 133, 46, 9, {143, 130, 161}, 204);
+        button("OPEN CONSOLE", 343, 18, 124, 38, menu_selector(SonwareGuiLayer::onConsole), true);
+        label("Drag the top bar to move", 133, 20, 9, {134, 122, 155}, 190);
         refreshBufferHud();
         return true;
     }
@@ -728,28 +718,23 @@ public:
         POINT cursor{};
         RECT client{};
         auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
-        DWORD windowPid = 0;
-        if (hwnd) GetWindowThreadProcessId(hwnd, &windowPid);
-        bool haveMouse = hwnd && windowPid == GetCurrentProcessId() && GetCursorPos(&cursor) && ScreenToClient(hwnd, &cursor) &&
-                         GetClientRect(hwnd, &client) &&
-                         (client.right - client.left) > 0 && (client.bottom - client.top) > 0;
-
-        if (haveMouse) {
-            float clientW = static_cast<float>(client.right - client.left);
-            float clientH = static_cast<float>(client.bottom - client.top);
-            cocos2d::CCPoint mousePos{
-                static_cast<float>(cursor.x) * winSize.width / clientW,
-                (clientH - static_cast<float>(cursor.y)) * winSize.height / clientH
-            };
-            if (leftDown && !m_leftWasDown && m_panel && m_panel->isVisible()) {
+        DWORD pid = 0;
+        if (hwnd) GetWindowThreadProcessId(hwnd, &pid);
+        bool haveMouse = hwnd && pid == GetCurrentProcessId() && GetCursorPos(&cursor) &&
+            ScreenToClient(hwnd, &cursor) && GetClientRect(hwnd, &client) &&
+            client.right > client.left && client.bottom > client.top;
+        if (haveMouse && m_panel && m_panel->isVisible()) {
+            float cw = static_cast<float>(client.right - client.left);
+            float ch = static_cast<float>(client.bottom - client.top);
+            cocos2d::CCPoint mousePos{cursor.x * winSize.width / cw,
+                                      (ch - cursor.y) * winSize.height / ch};
+            if (leftDown && !m_leftWasDown) {
                 auto local = m_panel->convertToNodeSpace(mousePos);
-                auto panelSize = m_panel->getContentSize();
-                if (local.x >= 0.f && local.x <= panelSize.width &&
-                    local.y >= panelSize.height - 30.f && local.y <= panelSize.height) {
+                if (local.x >= 0.f && local.x <= W && local.y >= H - 37.f && local.y <= H) {
                     m_dragging = true;
                     m_lastMouse = mousePos;
                 }
-            } else if (leftDown && m_dragging && m_panel) {
+            } else if (leftDown && m_dragging) {
                 auto pos = m_panel->getPosition();
                 pos.x += mousePos.x - m_lastMouse.x;
                 pos.y += mousePos.y - m_lastMouse.y;
@@ -758,23 +743,19 @@ public:
                 keepPanelOnScreen();
             }
         }
-        if (!leftDown) m_dragging = false;
+        if (!leftDown || !haveMouse) m_dragging = false;
         m_leftWasDown = leftDown;
     }
 
     void onConsole(cocos2d::CCObject*) {
-        if (!toggleSonwareConsole()) {
-            log::error("[SONWARE] Could not open Windows console");
-        }
+        if (!toggleSonwareConsole()) log::error("[SONWARE] Could not open Windows console");
     }
-
     void onStage1(cocos2d::CCObject*) { s_sim.selectPreset(0); refreshBufferHud(); sonwareConsoleLog("Selected Stage1"); }
     void onStage2(cocos2d::CCObject*) { s_sim.selectPreset(1); refreshBufferHud(); sonwareConsoleLog("Selected Stage2"); }
     void onStage3(cocos2d::CCObject*) { s_sim.selectPreset(2); refreshBufferHud(); sonwareConsoleLog("Selected Stage3"); }
     void onStage4(cocos2d::CCObject*) { s_sim.selectPreset(3); refreshBufferHud(); sonwareConsoleLog("Selected Stage4"); }
     void onExtreme(cocos2d::CCObject*) { s_sim.selectPreset(8); refreshBufferHud(); sonwareConsoleLog("Selected Extreme"); }
     void onSonwareCycle(cocos2d::CCObject*) { s_sim.cyclePreset(); refreshBufferHud(); sonwareConsoleLog("Cycled buffer stage"); }
-
     void onExit() override {
         if (s_sonwarePanel == m_panel) {
             s_sonwarePanel = nullptr;
