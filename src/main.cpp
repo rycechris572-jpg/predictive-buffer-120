@@ -658,6 +658,7 @@ public:
         constexpr float panelH = 262.f;
         m_panel = cocos2d::CCLayerColor::create({13, 10, 24, 247}, panelW, panelH);
         if (!m_panel) return false;
+        m_panel->ignoreAnchorPointForPosition(false);
         m_panel->setAnchorPoint({0.5f, 0.5f});
         float availableW = std::max(1.f, size.width - 16.f);
         float availableH = std::max(1.f, size.height - 16.f);
@@ -674,6 +675,7 @@ public:
         // Flat layers and subtle purple accents avoid expensive blur effects.
         rect(0.f, 0.f, 111.f, panelH, {24, 17, 44, 255});
         rect(0.f, panelH - 3.f, panelW, 3.f, {166, 98, 255, 255});
+        // Drag handle spans the top title bar. All positions are panel-local.
         rect(110.f, 0.f, 1.f, panelH, {89, 61, 133, 255});
         rect(122.f, 218.f, 306.f, 1.f, {75, 52, 109, 255});
         rect(122.f, 66.f, 306.f, 1.f, {75, 52, 109, 255});
@@ -717,6 +719,7 @@ public:
         bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
         if (rightAltDown && !m_rightAltWasDown && m_panel) {
             m_panel->setVisible(!m_panel->isVisible());
+            m_dragging = false;
         }
         m_rightAltWasDown = rightAltDown;
 
@@ -725,7 +728,9 @@ public:
         POINT cursor{};
         RECT client{};
         auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
-        bool haveMouse = hwnd && GetCursorPos(&cursor) && ScreenToClient(hwnd, &cursor) &&
+        DWORD windowPid = 0;
+        if (hwnd) GetWindowThreadProcessId(hwnd, &windowPid);
+        bool haveMouse = hwnd && windowPid == GetCurrentProcessId() && GetCursorPos(&cursor) && ScreenToClient(hwnd, &cursor) &&
                          GetClientRect(hwnd, &client) &&
                          (client.right - client.left) > 0 && (client.bottom - client.top) > 0;
 
