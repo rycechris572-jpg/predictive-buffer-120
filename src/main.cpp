@@ -528,9 +528,34 @@ static cocos2d::CCLabelBMFont* s_bufferHud = nullptr;
 static cocos2d::CCLabelBMFont* s_bufferButtonLabel = nullptr;
 static cocos2d::CCLayerColor* s_sonwarePanel = nullptr;
 
-static void refreshBufferButton() {
-    if (!s_bufferButtonLabel) return;
-  // SONWARE dashboard. Right Alt toggles visibility; drag the title strip to move it.
+// Windows console is allocated once and hidden/shown on demand.
+static HWND s_consoleWindow = nullptr;
+static bool s_consoleVisible = false;
+static FILE* s_consoleOut = nullptr;
+static FILE* s_consoleErr = nullptr;
+
+static void sonwareConsoleLog(const char* message) {
+    if (s_consoleWindow) {
+        std::printf("[SONWARE] %s\n", message);
+        std::fflush(stdout);
+    }
+}
+
+static bool toggleSonwareConsole() {
+    if (!s_consoleWindow) {
+        if (!AllocConsole()) return false;
+        s_consoleWindow = GetConsoleWindow();
+        freopen_s(&s_consoleOut, "CONOUT$", "w", stdout);
+        freopen_s(&s_consoleErr, "CONOUT$", "w", stderr);
+        SetConsoleTitleW(L"SONWARE - Debug Console");
+        sonwareConsoleLog("Console ready. Stage changes appear here.");
+    }
+    s_consoleVisible = !s_consoleVisible;
+    ShowWindow(s_consoleWindow, s_consoleVisible ? SW_SHOW : SW_HIDE);
+    return true;
+}
+
+// SONWARE dashboard. Right Alt toggles visibility; drag the title strip to move it.
 class SonwareGuiLayer : public cocos2d::CCLayer {
 protected:
     cocos2d::CCLayerColor* m_panel = nullptr;
@@ -647,6 +672,7 @@ public:
         s_bufferHud = addLabel("STATUS  |  2 TICKS", {14.f, 58.f}, 0.31f, {130, 245, 190});
         addLabel("ASSIST MODULES", {14.f, 39.f}, 0.25f, {135, 215, 255});
         addLabel("Orb Helper: not enabled in this build", {14.f, 23.f}, 0.22f, {170, 190, 210});
+        addButton("OPEN CONSOLE", {256.f, 40.f}, 0.24f, menu_selector(SonwareGuiLayer::onConsole), {255, 215, 135});
         addLabel("Auto-click: not enabled in this build", {14.f, 9.f}, 0.22f, {170, 190, 210});
 
         refreshBufferHud();
@@ -697,41 +723,18 @@ public:
         m_leftWasDown = leftDown;
     }
 
-    void onStage1(cocos2d::CCObject*) { s_sim.selectPreset(0); refreshBufferHud(); }
-    void onStage2(cocos2d::CCObject*) { s_sim.selectPreset(1); refreshBufferHud(); }
-    void onStage3(cocos2d::CCObject*) { s_sim.selectPreset(2); refreshBufferHud(); }
-    void onStage4(cocos2d::CCObject*) { s_sim.selectPreset(3); refreshBufferHud(); }
-    void onExtreme(cocos2d::CCObject*) { s_sim.selectPreset(8); refreshBufferHud(); }
-    void onSonwareCycle(cocos2d::CCObject*) { s_sim.cyclePreset(); refreshBufferHud(); }
-
-    void onExit() override {
-        if (s_sonwarePanel == m_panel) {
-            s_sonwarePanel = nullptr;
-            s_bufferHud = nullptr;
-            s_bufferButtonLabel = nullptr;
+    void onConsole(cocos2d::CCObject*) {
+        if (!toggleSonwareConsole()) {
+            log::error("[SONWARE] Could not open Windows console");
         }
-        cocos2d::CCLayer::onExit();
-    }
-};
-
-{
-                auto pos = m_panel->getPosition();
-                pos.x += mousePos.x - m_lastMouse.x;
-                pos.y += mousePos.y - m_lastMouse.y;
-                m_panel->setPosition(pos);
-                m_lastMouse = mousePos;
-                keepPanelOnScreen();
-            }
-        }
-
-        if (!leftDown) m_dragging = false;
-        m_leftWasDown = leftDown;
     }
 
-    void onSonwareCycle(cocos2d::CCObject*) {
-        s_sim.cyclePreset();
-        refreshBufferHud();
-    }
+    void onStage1(cocos2d::CCObject*) { s_sim.selectPreset(0); refreshBufferHud(); sonwareConsoleLog("Selected Stage1"); }
+    void onStage2(cocos2d::CCObject*) { s_sim.selectPreset(1); refreshBufferHud(); sonwareConsoleLog("Selected Stage2"); }
+    void onStage3(cocos2d::CCObject*) { s_sim.selectPreset(2); refreshBufferHud(); sonwareConsoleLog("Selected Stage3"); }
+    void onStage4(cocos2d::CCObject*) { s_sim.selectPreset(3); refreshBufferHud(); sonwareConsoleLog("Selected Stage4"); }
+    void onExtreme(cocos2d::CCObject*) { s_sim.selectPreset(8); refreshBufferHud(); sonwareConsoleLog("Selected Extreme"); }
+    void onSonwareCycle(cocos2d::CCObject*) { s_sim.cyclePreset(); refreshBufferHud(); sonwareConsoleLog("Cycled buffer stage"); }
 
     void onExit() override {
         if (s_sonwarePanel == m_panel) {
