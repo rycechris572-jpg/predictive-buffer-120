@@ -26,7 +26,7 @@ constexpr int SPAM_STREAK_REQUIRED = 3;
 // ============================================================================
 
 static void refreshBufferHud();
-
+static int sonwareKeyCode(const std::string&name, int fallback);
 // SONWARE V2 defaults are defined in mod.json.
 static bool essentialLogsEnabled() {
     return Mod::get()->getSettingValue<bool>("essential-logs");
@@ -742,9 +742,9 @@ public:
             label("LEGIT WAVE - PREDICTIVE RESCUE", x, 126, 11, {194,161,250}, 330);
             button(m_waveAssistRequested ? "REQUESTED: ON" : "REQUESTED: OFF", x, 80, 154, 34, menu_selector(SonwareGuiLayer::onWaveRequest));
             button("RESCUE WINDOW", 313, 80, 154, 34, menu_selector(SonwareGuiLayer::onRescueWindow));
-            button("TOGGLE F7", x, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipToggle));
-            button("HOLD F7", 313, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipHold));
-            label("Ship prototype active. Legit Wave not yet implemented.", x, 19, 9, {175,151,182}, 325);
+            button("TOGGLE MODE", x, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipToggle));
+            button("HOLD MODE", 313, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipHold));
+            label("Ship key: change in Geode mod settings.", x, 19, 9, {175,151,182}, 325);
         } else if (tab == 3) {
             label("Optimisation", x, 224, 18, {241,229,255}, 330);
             label("Simulation scan budget (active)", x, 201, 10, {165,150,188}, 330);
@@ -764,9 +764,9 @@ public:
             button("OPEN CONSOLE", x, 32, 334, 40, menu_selector(SonwareGuiLayer::onConsole), true);
         } else {
             label("Settings", x, 224, 18, {241,229,255}, 330);
-            label("Right Alt  -  Show / hide SONWARE", x, 178, 11, {182,165,210}, 330);
-            label("Drag the title bar to reposition the window.", x, 151, 11, {182,165,210}, 330);
-            label("Performance presets are saved in Geode.", x, 124, 11, {182,165,210}, 330);
+            label("GUI hotkey is configurable in Geode settings.", x, 178, 11, {182,165,210}, 330);
+            label("Ship assist key is configurable too.", x, 151, 11, {182,165,210}, 330);
+            label("GUI opens only after you press its hotkey.", x, 124, 11, {182,165,210}, 330);
             button("OPEN CONSOLE", x, 48, 200, 38, menu_selector(SonwareGuiLayer::onConsole), true);
         }
     }
@@ -814,7 +814,8 @@ public:
     }
 
     void update(float) override {
-        bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
+        int guiKey = sonwareKeyCode(Mod::get()->getSettingValue<std::string>("gui-keybind"), VK_RMENU);
+        bool rightAltDown = (GetAsyncKeyState(guiKey) & 0x8000) != 0;
         if (rightAltDown && !m_rightAltWasDown && m_panel) {
             m_panel->setVisible(!m_panel->isVisible());
             m_dragging = false;
@@ -874,6 +875,33 @@ public:
     }
 };
 
+
+static bool s_guiHotkeyWasDown = false;
+static bool s_guiOpen = false;
+static void sonwarePollGuiHotkey(cocos2d::CCNode* scene) {
+    int key = sonwareKeyCode(Mod::get()->getSettingValue<std::string>("gui-keybind"), VK_RMENU);
+    bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
+    if (down && !s_guiHotkeyWasDown && scene) {
+        if (s_guiOpen) {
+            // Locate and remove the overlay without affecting the game scene.
+            auto children = scene->getChildren();
+            if (children) {
+                for (unsigned int i = 0; i < children->count(); ++i) {
+                    auto* node = typeinfo_cast<SonwareGuiLayer*>(children->objectAtIndex(i));
+                    if (node) { node->removeFromParentAndCleanup(true); break; }
+                }
+            }
+            s_guiOpen = false;
+        } else {
+            if (auto* gui = SonwareGuiLayer::create()) {
+                scene->addChild(gui, 9999);
+                s_guiOpen = true;
+            }
+        }
+    }
+    s_guiHotkeyWasDown = down;
+}
+
 $on_mod(Loaded) {
     log::info("[SONWARE V2] Predictive Buffer loaded. Dashboard loaded; Balanced performance preset active.");
     log::info("[SONWARE V2] Essential event logs are enabled; detailed input logs are disabled by default.");
@@ -882,14 +910,30 @@ $on_mod(Loaded) {
 class $modify(SonwareMenuLayer, MenuLayer) {
     bool init() {
         if (!MenuLayer::init()) return false;
-        if (auto* gui = SonwareGuiLayer::create()) this->addChild(gui, 9999);
         return true;
+    }
+    void update(float dt) {
+        MenuLayer::update(dt);
+        sonwarePollGuiHotkey(this);
     }
 };
 
 
 // SONWARE ship altitude-assist prototype. Synthetic inputs bypass the buffer hook
 // so they are not delayed or mistaken for a player's tap.
+
+static int sonwareKeyCode(const std::string& name, int fallback) {
+    if (name == "F6") return VK_F6;
+    if (name == "F7") return VK_F7;
+    if (name == "F8") return VK_F8;
+    if (name == "F9") return VK_F9;
+    if (name == "F10") return VK_F10;
+    if (name == "Right Alt") return VK_RMENU;
+    if (name == "Insert") return VK_INSERT;
+    if (name == "Home") return VK_HOME;
+    return fallback;
+}
+
 static bool s_shipSyntheticInput = false;
 class SonwareShipAssist {
     bool m_toggled = false;
@@ -908,7 +952,8 @@ public:
     }
     void tick(PlayLayer* layer) {
         if (!layer || !layer->m_player1 || s_sim.isSimulating()) return;
-        bool keyDown = (GetAsyncKeyState(VK_F7) & 0x8000) != 0;
+        int shipKey = sonwareKeyCode(Mod::get()->getSettingValue<std::string>("ship-keybind"), VK_F7);
+        bool keyDown = (GetAsyncKeyState(shipKey) & 0x8000) != 0;
         auto activation = Mod::get()->getSettingValue<std::string>("ship-activation");
         if (activation == "Toggle" && keyDown && !m_previousKey)
             m_toggled = !m_toggled;
@@ -960,13 +1005,13 @@ class $modify(BufPlayLayer, PlayLayer) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         s_sim.init();
         s_shipAssist.reset();
-        // Centered, draggable GUI; also available in the main menu. Right Alt toggles it.
-        if (auto* gui = SonwareGuiLayer::create()) this->addChild(gui, 9999);
+        // GUI is intentionally not auto-created in gameplay. It is opened by the configured hotkey.
         return true;
     }
 
     void update(float dt) {
         PlayLayer::update(dt);
+        sonwarePollGuiHotkey(this);
         s_shipAssist.tick(this);
     }
 
@@ -1124,4 +1169,3 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
         GJBaseGameLayer::playerTouchedRing(player, ring);
     }
 };
-
