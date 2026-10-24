@@ -852,9 +852,11 @@ public:
 static bool s_guiHotkeyWasDown = false;
 static bool s_guiOpen = false;
 static void sonwarePollGuiHotkey(cocos2d::CCNode* scene) {
-    int key = sonwareKeyCode(Mod::get()->getSettingValue<std::string>("gui-keybind"), VK_RMENU);
+    // Temporary diagnostic hotkey: F10, independent of the Geode setting.
+    int key = VK_F10;
     bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
     if (down && !s_guiHotkeyWasDown && scene) {
+        log::info("[SONWARE] F10 detected!");
         if (s_guiOpen) {
             // Locate and remove the overlay without affecting the game scene.
             auto children = scene->getChildren();
@@ -865,10 +867,14 @@ static void sonwarePollGuiHotkey(cocos2d::CCNode* scene) {
                 }
             }
             s_guiOpen = false;
+            log::info("[SONWARE] GUI closed");
         } else {
             if (auto* gui = SonwareGuiLayer::create()) {
                 scene->addChild(gui, 9999);
                 s_guiOpen = true;
+                log::info("[SONWARE] GUI opened!");
+            } else {
+                log::error("[SONWARE] GUI creation failed!");
             }
         }
     }
@@ -1142,4 +1148,5 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
         GJBaseGameLayer::playerTouchedRing(player, ring);
     }
 };
+
 
