@@ -742,7 +742,9 @@ public:
             label("LEGIT WAVE - PREDICTIVE RESCUE", x, 126, 11, {194,161,250}, 330);
             button(m_waveAssistRequested ? "REQUESTED: ON" : "REQUESTED: OFF", x, 80, 154, 34, menu_selector(SonwareGuiLayer::onWaveRequest));
             button("RESCUE WINDOW", 313, 80, 154, 34, menu_selector(SonwareGuiLayer::onRescueWindow));
-            label("Assist controls are previews; no automatic input yet.", x, 47, 9, {175,151,182}, 325);
+            button("TOGGLE F7", x, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipToggle));
+            button("HOLD F7", 313, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipHold));
+            label("Ship prototype active. Legit Wave not yet implemented.", x, 19, 9, {175,151,182}, 325);
         } else if (tab == 3) {
             label("Optimisation", x, 224, 18, {241,229,255}, 330);
             label("Simulation scan budget (active)", x, 201, 10, {165,150,188}, 330);
@@ -774,8 +776,20 @@ public:
     void onOptimise(cocos2d::CCObject*) { showTab(3); }
     void onLogs(cocos2d::CCObject*) { showTab(4); }
     void onSettings(cocos2d::CCObject*) { showTab(5); }
-    void onShipLegit(cocos2d::CCObject*) { m_shipStyle = 1; showTab(2); }
-    void onShipAuto(cocos2d::CCObject*) { m_shipStyle = 2; showTab(2); }
+    void onShipLegit(cocos2d::CCObject*) {
+        Mod::get()->setSettingValue<std::string>("ship-style", "Legit");
+        m_shipStyle = 1; showTab(2);
+    }
+    void onShipAuto(cocos2d::CCObject*) {
+        Mod::get()->setSettingValue<std::string>("ship-style", "Auto");
+        m_shipStyle = 2; showTab(2);
+    }
+    void onShipToggle(cocos2d::CCObject*) {
+        Mod::get()->setSettingValue<std::string>("ship-activation", "Toggle"); showTab(2);
+    }
+    void onShipHold(cocos2d::CCObject*) {
+        Mod::get()->setSettingValue<std::string>("ship-activation", "Hold"); showTab(2);
+    }
     void onWaveRequest(cocos2d::CCObject*) { m_waveAssistRequested = !m_waveAssistRequested; showTab(2); }
     void onRescueWindow(cocos2d::CCObject*) { m_rescueFrames = m_rescueFrames % 5 + 1; showTab(2); }
     void onLowEnd(cocos2d::CCObject*) { Mod::get()->setSettingValue<std::string>("performance-preset", "Low-end"); showTab(3); }
@@ -873,6 +887,68 @@ class $modify(SonwareMenuLayer, MenuLayer) {
     }
 };
 
+
+// SONWARE ship altitude-assist prototype. Synthetic inputs bypass the buffer hook
+// so they are not delayed or mistaken for a player's tap.
+static bool s_shipSyntheticInput = false;
+class SonwareShipAssist {
+    bool m_toggled = false;
+    bool m_previousKey = false;
+    bool m_pressed = false;
+    bool m_targetSet = false;
+    float m_targetY = 0.f;
+    int m_wait = 0;
+public:
+    void reset() {
+        m_toggled = false;
+        m_previousKey = false;
+        m_pressed = false;
+        m_targetSet = false;
+        m_wait = 0;
+    }
+    void tick(PlayLayer* layer) {
+        if (!layer || !layer->m_player1 || s_sim.isSimulating()) return;
+        bool keyDown = (GetAsyncKeyState(VK_F7) & 0x8000) != 0;
+        auto activation = Mod::get()->getSettingValue<std::string>("ship-activation");
+        if (activation == "Toggle" && keyDown && !m_previousKey)
+            m_toggled = !m_toggled;
+        m_previousKey = keyDown;
+        bool enabled = activation == "Hold" ? keyDown : m_toggled;
+        auto* player = layer->m_player1;
+        bool active = enabled && player->m_isShip;
+        if (!active) {
+            if (m_pressed) {
+                s_shipSyntheticInput = true;
+                layer->handleButton(false, 1, true);
+                s_shipSyntheticInput = false;
+                m_pressed = false;
+            }
+            m_targetSet = false;
+            return;
+        }
+        if (!m_targetSet) {
+            m_targetY = player->getPositionY();
+            m_targetSet = true;
+        }
+        if (m_wait > 0) { --m_wait; return; }
+        auto style = Mod::get()->getSettingValue<std::string>("ship-style");
+        float deadzone = style == "Auto" ? 2.f : 5.f;
+        int waitFrames = style == "Auto" ? 2 : 6;
+        float error = m_targetY - player->getPositionY();
+        bool desired = m_pressed;
+        if (error > deadzone) desired = true;
+        else if (error < -deadzone) desired = false;
+        if (desired != m_pressed) {
+            s_shipSyntheticInput = true;
+            layer->handleButton(desired, 1, true);
+            s_shipSyntheticInput = false;
+            m_pressed = desired;
+            m_wait = waitFrames;
+        }
+    }
+};
+static SonwareShipAssist s_shipAssist;
+
 class $modify(BufPlayLayer, PlayLayer) {
     static void onModify(auto& self) {
         (void)self.setHookPriority("PlayLayer::destroyPlayer", -1000000);
@@ -883,9 +959,15 @@ class $modify(BufPlayLayer, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         s_sim.init();
+        s_shipAssist.reset();
         // Centered, draggable GUI; also available in the main menu. Right Alt toggles it.
         if (auto* gui = SonwareGuiLayer::create()) this->addChild(gui, 9999);
         return true;
+    }
+
+    void update(float dt) {
+        PlayLayer::update(dt);
+        s_shipAssist.tick(this);
     }
 
     void destroyPlayer(PlayerObject* player, GameObject* gameObject) {
@@ -914,6 +996,7 @@ class $modify(BufPlayLayer, PlayLayer) {
         s_bufferHud = nullptr;
         s_bufferButtonLabel = nullptr;
         s_sonwarePanel = nullptr;
+        s_shipAssist.reset();
         PlayLayer::onQuit();
         s_sim.quit();
     }
@@ -1007,7 +1090,7 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
     }
 
     void handleButton(bool down, int button, bool isPlayer1) {
-        if (!s_sim.isSimulating() && !s_sim.isFiringBuffered() && button == 1 && PlayLayer::get()) {
+        if (!s_shipSyntheticInput && !s_sim.isSimulating() && !s_sim.isFiringBuffered() && button == 1 && PlayLayer::get()) {
             if (!s_sim.interceptInput(this, down, isPlayer1)) {
                 return;
             }
