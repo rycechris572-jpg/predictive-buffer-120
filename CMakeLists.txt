@@ -26,7 +26,7 @@ constexpr int SPAM_STREAK_REQUIRED = 3;
 // ============================================================================
 
 static void refreshBufferHud();
-
+static int sonwareKeyCode(const std::string&name, int fallback);
 // SONWARE V2 defaults are defined in mod.json.
 static bool essentialLogsEnabled() {
     return Mod::get()->getSettingValue<bool>("essential-logs");
