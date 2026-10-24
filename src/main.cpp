@@ -795,14 +795,6 @@ public:
     }
 
     void update(float) override {
-        int guiKey = sonwareKeyCode(Mod::get()->getSettingValue<std::string>("gui-keybind"), VK_RMENU);
-        bool rightAltDown = (GetAsyncKeyState(guiKey) & 0x8000) != 0;
-        if (rightAltDown && !m_rightAltWasDown && m_panel) {
-            m_panel->setVisible(!m_panel->isVisible());
-            m_dragging = false;
-        }
-        m_rightAltWasDown = rightAltDown;
-
         bool leftDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
         HWND hwnd = GetForegroundWindow();
         POINT cursor{};
