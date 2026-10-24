@@ -1,11 +1,20 @@
+
 {
-	"geode": "5.11.2",
-	"gd": {
-		"win": "2.2081"
-	},
-	"version": "v1.0.0",
-	"id": "ai.predictivebuffer",
-	"name": "Predictive Input Buffer",
-	"developer": "lilWC",
-	"description": "Trajectory-based 1-2 frame press and wave release input buffer."
+  "geode": "5.11.2",
+  "gd": {
+    "win": "2.2081"
+  },
+  "version": "v5.0.0",
+  "id": "ai.predictivebuffer",
+  "name": "SONWARE V5",
+  "developer": "SONWARE",
+  "description": "Predictive input buffering and assist features.",
+  "settings": {
+    "gui-keybind": {
+      "type": "string",
+      "name": "GUI Keybind",
+      "description": "Key used to toggle the SONWARE interface.",
+      "default": "Right Alt"
+    }
+  }
 }
