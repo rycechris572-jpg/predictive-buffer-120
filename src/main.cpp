@@ -13,6 +13,9 @@
 
 using namespace geode::prelude;
 
+// Forward declaration: used by GUI hotkey handlers below.
+static int sonwareKeyCode(const std::string& name, int fallback);
+
 // ============================================================================
 //  USER SETTINGS
 // ============================================================================
