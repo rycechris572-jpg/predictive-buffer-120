@@ -584,15 +584,33 @@ class SonwareGuiLayer : public cocos2d::CCLayer {
 protected:
     cocos2d::CCLayerColor* m_panel = nullptr;
     bool m_rightAltWasDown = false;
+    int m_activeTab = 0;
+    cocos2d::CCNode* m_content = nullptr;
+    bool m_fpsMonitor = false;
+    bool m_lowDetail = false;
+    bool m_particleLimit = false;
+    bool m_shaderControl = false;
+    bool m_simOptimizer = true;
+    int m_shipStyle = 0;
+    bool m_waveAssistRequested = false;
+    int m_rescueFrames = 3;
+    int m_customTicks = 12;
     bool m_dragging = false;
     bool m_leftWasDown = false;
     cocos2d::CCPoint m_lastMouse = {0.f, 0.f};
     static constexpr float W = 490.f;
     static constexpr float H = 286.f;
 
+    cocos2d::CCNode* target() { return m_content ? m_content : static_cast<cocos2d::CCNode*>(m_panel); }
+    void clearContent() {
+        s_bufferHud = nullptr;
+        if (m_content) { m_content->removeFromParentAndCleanup(true); m_content = nullptr; }
+        m_content = cocos2d::CCNode::create();
+        m_panel->addChild(m_content, 3);
+    }
     void rect(float x, float y, float w, float h, cocos2d::ccColor4B color, int z = 0) {
         auto* node = cocos2d::CCLayerColor::create(color, w, h);
-        if (node) { node->setPosition({x, y}); m_panel->addChild(node, z); }
+        if (node) { node->setPosition({x, y}); target()->addChild(node, z); }
     }
 
     cocos2d::CCLabelTTF* label(const char* str, float x, float y, float fontSize,
@@ -605,7 +623,7 @@ protected:
         node->setColor(color);
         if (maxWidth > 0.f && node->getContentSize().width > maxWidth)
             node->setScale(maxWidth / node->getContentSize().width);
-        m_panel->addChild(node, 5);
+        target()->addChild(node, 5);
         return node;
     }
 
@@ -623,7 +641,7 @@ protected:
         auto* menu = cocos2d::CCMenu::createWithItem(item);
         if (!menu) return;
         menu->setPosition({x + w * 0.5f, y + h * 0.5f});
-        m_panel->addChild(menu, 6);
+        target()->addChild(menu, 6);
     }
 
     void keepPanelOnScreen() {
@@ -677,33 +695,92 @@ public:
         label("NAVIGATION", 14, 221, 9, {128, 113, 157}, 95);
         rect(8, 183, 100, 28, {63, 39, 104, 255});
         rect(8, 183, 3, 28, {172, 111, 255, 255});
-        label("Dashboard", 19, 197, 12, {244, 236, 255}, 84);
-        label("Stages", 19, 163, 11, {179, 168, 198}, 84);
-        label("Console", 19, 133, 11, {179, 168, 198}, 84);
+        button("DASHBOARD", 9, 186, 98, 24, menu_selector(SonwareGuiLayer::onDashboard));
+        button("STAGES", 9, 157, 98, 24, menu_selector(SonwareGuiLayer::onStages));
+        button("ASSIST", 9, 128, 98, 24, menu_selector(SonwareGuiLayer::onAssist));
+        button("OPTIMISE", 9, 99, 98, 24, menu_selector(SonwareGuiLayer::onOptimise));
+        button("LOGS", 9, 70, 98, 24, menu_selector(SonwareGuiLayer::onLogs));
+        button("SETTINGS", 9, 41, 98, 24, menu_selector(SonwareGuiLayer::onSettings));
         rect(13, 55, 90, 1, {60, 48, 82, 255});
         label("SONWARE", 14, 37, 10, {164, 114, 239}, 90);
         label("Windows  •  Geode", 14, 21, 9, {136, 125, 159}, 90);
 
-        label("Stage control", 133, 226, 18, {239, 233, 250}, 195);
-        label("Choose a simulation preset", 133, 206, 10, {152, 140, 174}, 230);
-        // Six equal tiles, all captions centered and auto-fit to their tiles.
-        constexpr float bw = 106.f;
-        constexpr float bh = 40.f;
-        button("STAGE 1", 133, 150, bw, bh, menu_selector(SonwareGuiLayer::onStage1));
-        button("STAGE 2", 247, 150, bw, bh, menu_selector(SonwareGuiLayer::onStage2));
-        button("STAGE 3", 361, 150, bw, bh, menu_selector(SonwareGuiLayer::onStage3));
-        button("STAGE 4", 133, 101, bw, bh, menu_selector(SonwareGuiLayer::onStage4));
-        button("EXTREME", 247, 101, bw, bh, menu_selector(SonwareGuiLayer::onExtreme), true);
-        button("CYCLE PRESET", 361, 101, bw, bh, menu_selector(SonwareGuiLayer::onSonwareCycle));
-
-        rect(133, 84, 334, 1, {62, 49, 87, 255});
-        s_bufferHud = label("STATUS  |  2 TICKS", 133, 65, 11, {139, 238, 189}, 318);
-        label("Orb helper / Auto-click: unavailable", 133, 46, 9, {143, 130, 161}, 204);
-        button("OPEN CONSOLE", 343, 18, 124, 38, menu_selector(SonwareGuiLayer::onConsole), true);
-        label("Drag the top bar to move", 133, 20, 9, {134, 122, 155}, 190);
-        refreshBufferHud();
+        showTab(0);
         return true;
     }
+
+    void showTab(int tab) {
+        m_activeTab = tab;
+        clearContent();
+        constexpr float x = 133.f;
+        if (tab == 0) {
+            label("Dashboard", x, 224, 18, {241,229,255}, 310);
+            label("Predictive input buffer", x, 202, 11, {155,141,177}, 310);
+            s_bufferHud = label("STATUS", x, 169, 13, {139,238,189}, 310);
+            refreshBufferHud();
+            button("STAGES", x, 105, 150, 42, menu_selector(SonwareGuiLayer::onStages), true);
+            button("OPEN CONSOLE", 302, 105, 164, 42, menu_selector(SonwareGuiLayer::onConsole));
+            label("Right Alt: hide  |  Drag title bar: move", x, 55, 10, {165,153,185}, 330);
+        } else if (tab == 1) {
+            label("Stages", x, 224, 18, {241,229,255}, 300);
+            label("Predictive buffer presets", x, 204, 10, {155,141,177}, 300);
+            button("STAGE 1", x, 150, 106, 38, menu_selector(SonwareGuiLayer::onStage1));
+            button("STAGE 2", 247, 150, 106, 38, menu_selector(SonwareGuiLayer::onStage2));
+            button("STAGE 3", 361, 150, 106, 38, menu_selector(SonwareGuiLayer::onStage3));
+            button("STAGE 4", x, 102, 106, 38, menu_selector(SonwareGuiLayer::onStage4));
+            button("EXTREME", 247, 102, 106, 38, menu_selector(SonwareGuiLayer::onExtreme), true);
+            button("CYCLE", 361, 102, 106, 38, menu_selector(SonwareGuiLayer::onSonwareCycle));
+            s_bufferHud = label("STATUS", x, 65, 11, {139,238,189}, 325);
+            refreshBufferHud();
+        } else if (tab == 2) {
+            label("Assist", x, 224, 18, {241,229,255}, 300);
+            label("SHIP STRAIGHT FLY", x, 197, 11, {194,161,250}, 300);
+            button("LEGIT", x, 147, 154, 36, menu_selector(SonwareGuiLayer::onShipLegit), m_shipStyle == 1);
+            button("AUTO", 313, 147, 154, 36, menu_selector(SonwareGuiLayer::onShipAuto), m_shipStyle == 2);
+            label("LEGIT WAVE - PREDICTIVE RESCUE", x, 126, 11, {194,161,250}, 330);
+            button(m_waveAssistRequested ? "REQUESTED: ON" : "REQUESTED: OFF", x, 80, 154, 34, menu_selector(SonwareGuiLayer::onWaveRequest));
+            button("RESCUE WINDOW", 313, 80, 154, 34, menu_selector(SonwareGuiLayer::onRescueWindow));
+            label("Assist controls are previews; no automatic input yet.", x, 47, 9, {175,151,182}, 325);
+        } else if (tab == 3) {
+            label("Optimisation", x, 224, 18, {241,229,255}, 330);
+            label("Simulation scan budget (active)", x, 201, 10, {165,150,188}, 330);
+            button("LOW-END", x, 155, 106, 34, menu_selector(SonwareGuiLayer::onLowEnd));
+            button("BALANCED", 247, 155, 106, 34, menu_selector(SonwareGuiLayer::onBalanced), true);
+            button("FULL", 361, 155, 106, 34, menu_selector(SonwareGuiLayer::onFull));
+            button("FPS MONITOR", x, 107, 154, 34, menu_selector(SonwareGuiLayer::onFpsToggle));
+            button("SIM OPTIMISER", 313, 107, 154, 34, menu_selector(SonwareGuiLayer::onSimToggle));
+            label("Visual optimisers need engine hooks; not active yet.", x, 70, 9, {170,151,190}, 330);
+            label("Preset is saved using Geode settings.", x, 50, 9, {170,151,190}, 330);
+        } else if (tab == 4) {
+            label("Logs", x, 224, 18, {241,229,255}, 330);
+            rect(x, 88, 334, 114, {11,10,18,255}, 1);
+            label("[SONWARE] Dashboard ready", x+12, 178, 11, {147,236,183}, 300);
+            label("[INFO] Stage changes logged to console", x+12, 154, 10, {182,165,210}, 300);
+            label("[INFO] See Geode log for additional events", x+12, 130, 10, {182,165,210}, 300);
+            button("OPEN CONSOLE", x, 32, 334, 40, menu_selector(SonwareGuiLayer::onConsole), true);
+        } else {
+            label("Settings", x, 224, 18, {241,229,255}, 330);
+            label("Right Alt  -  Show / hide SONWARE", x, 178, 11, {182,165,210}, 330);
+            label("Drag the title bar to reposition the window.", x, 151, 11, {182,165,210}, 330);
+            label("Performance presets are saved in Geode.", x, 124, 11, {182,165,210}, 330);
+            button("OPEN CONSOLE", x, 48, 200, 38, menu_selector(SonwareGuiLayer::onConsole), true);
+        }
+    }
+    void onDashboard(cocos2d::CCObject*) { showTab(0); }
+    void onStages(cocos2d::CCObject*) { showTab(1); }
+    void onAssist(cocos2d::CCObject*) { showTab(2); }
+    void onOptimise(cocos2d::CCObject*) { showTab(3); }
+    void onLogs(cocos2d::CCObject*) { showTab(4); }
+    void onSettings(cocos2d::CCObject*) { showTab(5); }
+    void onShipLegit(cocos2d::CCObject*) { m_shipStyle = 1; showTab(2); }
+    void onShipAuto(cocos2d::CCObject*) { m_shipStyle = 2; showTab(2); }
+    void onWaveRequest(cocos2d::CCObject*) { m_waveAssistRequested = !m_waveAssistRequested; showTab(2); }
+    void onRescueWindow(cocos2d::CCObject*) { m_rescueFrames = m_rescueFrames % 5 + 1; showTab(2); }
+    void onLowEnd(cocos2d::CCObject*) { Mod::get()->setSettingValue<std::string>("performance-preset", "Low-end"); showTab(3); }
+    void onBalanced(cocos2d::CCObject*) { Mod::get()->setSettingValue<std::string>("performance-preset", "Balanced"); showTab(3); }
+    void onFull(cocos2d::CCObject*) { Mod::get()->setSettingValue<std::string>("performance-preset", "Full"); showTab(3); }
+    void onFpsToggle(cocos2d::CCObject*) { m_fpsMonitor = !m_fpsMonitor; showTab(3); }
+    void onSimToggle(cocos2d::CCObject*) { m_simOptimizer = !m_simOptimizer; showTab(3); }
 
     void update(float) override {
         bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
