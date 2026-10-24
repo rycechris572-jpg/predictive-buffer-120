@@ -26,7 +26,7 @@ constexpr int SPAM_STREAK_REQUIRED = 3;
 // ============================================================================
 
 static void refreshBufferHud();
-static int sonwareKeyCode(const std::string&name, int fallback);
+
 // SONWARE V2 defaults are defined in mod.json.
 static bool essentialLogsEnabled() {
     return Mod::get()->getSettingValue<bool>("essential-logs");
@@ -629,11 +629,11 @@ protected:
 
     void button(const char* caption, float x, float y, float w, float h,
                 cocos2d::SEL_MenuHandler cb, bool accent = false) {
-        rect(x, y, w, h, accent ? cocos2d::ccc4(90, 49, 155, 255) : cocos2d::ccc4(38, 32, 58, 255), 1);
-        rect(x, y + h - 1.f, w, 1.f, accent ? cocos2d::ccc4(171, 116, 252, 255) : cocos2d::ccc4(72, 61, 99, 255), 2);
+        rect(x, y, w, h, accent ? cocos2d::ccc4(18, 91, 101, 255) : cocos2d::ccc4(29, 37, 42, 255), 1);
+        rect(x, y + h - 1.f, w, 1.f, accent ? cocos2d::ccc4(0, 220, 235, 255) : cocos2d::ccc4(55, 75, 81, 255), 2);
         auto* title = cocos2d::CCLabelTTF::create(caption, "Segoe UI", 12.f);
         if (!title) return;
-        title->setColor({244, 239, 255});
+        title->setColor({225, 245, 247});
         if (title->getContentSize().width > w - 14.f)
             title->setScale((w - 14.f) / title->getContentSize().width);
         auto* item = cocos2d::CCMenuItemLabel::create(title, this, cb);
@@ -670,7 +670,7 @@ public:
         // Receive touches after CCMenu buttons (priority -128), but before game menus.
         this->setTouchEnabled(true);
         this->scheduleUpdate();
-        m_panel = cocos2d::CCLayerColor::create({14, 13, 23, 255}, W, H);
+        m_panel = cocos2d::CCLayerColor::create({16, 20, 23, 255}, W, H);
         if (!m_panel) return false;
         m_panel->ignoreAnchorPointForPosition(false);
         m_panel->setAnchorPoint({.5f, .5f});
@@ -681,31 +681,27 @@ public:
         s_sonwarePanel = m_panel;
 
         // Desktop-style opaque frame, purple border and slim title bar.
-        rect(0, 0, W, 1, {129, 80, 210, 255});
-        rect(0, H-1, W, 1, {129, 80, 210, 255});
-        rect(0, 0, 1, H, {129, 80, 210, 255});
-        rect(W-1, 0, 1, H, {129, 80, 210, 255});
-        rect(1, H-37, W-2, 36, {23, 19, 37, 255});
-        rect(1, 1, 116, H-39, {21, 18, 33, 255});
-        rect(117, 1, 1, H-39, {53, 42, 79, 255});
-        rect(0, H-38, W, 1, {65, 47, 100, 255});
-        rect(12, H-28, 3, 16, {166, 105, 255, 255});
-        label("SONWARE", 22, H-20, 17, {241, 229, 255}, 150);
+        rect(0, 0, W, 1, {0, 190, 205, 255});
+        rect(0, H-1, W, 1, {0, 190, 205, 255});
+        rect(0, 0, 1, H, {0, 190, 205, 255});
+        rect(W-1, 0, 1, H, {0, 190, 205, 255});
+        rect(1, H-37, W-2, 36, {23, 32, 36, 255});
+        rect(1, 1, 116, H-39, {20, 27, 31, 255});
+        rect(117, 1, 1, H-39, {48, 67, 73, 255});
+        rect(0, H-38, W, 1, {48, 67, 73, 255});
+        rect(12, H-28, 3, 16, {0, 220, 235, 255});
+        label("SONWARE V5", 22, H-20, 17, {225, 245, 247}, 150);
         label("PREDICTIVE BUFFER", 144, H-20, 10, {149, 134, 174}, 180);
         label("Right Alt  •  Hide / Show", W-12, H-20, 9, {161, 146, 188}, 126, {1.f,.5f});
 
-        label("NAVIGATION", 14, 221, 9, {128, 113, 157}, 95);
-        rect(8, 183, 100, 28, {63, 39, 104, 255});
-        rect(8, 183, 3, 28, {172, 111, 255, 255});
-        button("DASHBOARD", 9, 186, 98, 24, menu_selector(SonwareGuiLayer::onDashboard));
+        label("NAVIGATION", 14, 221, 9, {128, 200, 210}, 95);
+        button("LOG", 9, 186, 98, 24, menu_selector(SonwareGuiLayer::onLogs));
         button("STAGES", 9, 157, 98, 24, menu_selector(SonwareGuiLayer::onStages));
         button("ASSIST", 9, 128, 98, 24, menu_selector(SonwareGuiLayer::onAssist));
-        button("OPTIMISE", 9, 99, 98, 24, menu_selector(SonwareGuiLayer::onOptimise));
-        button("LOGS", 9, 70, 98, 24, menu_selector(SonwareGuiLayer::onLogs));
-        button("SETTINGS", 9, 41, 98, 24, menu_selector(SonwareGuiLayer::onSettings));
-        rect(13, 55, 90, 1, {60, 48, 82, 255});
-        label("SONWARE", 14, 37, 10, {164, 114, 239}, 90);
-        label("Windows  •  Geode", 14, 21, 9, {136, 125, 159}, 90);
+        button("SETTINGS", 9, 99, 98, 24, menu_selector(SonwareGuiLayer::onSettings));
+        rect(13, 55, 90, 1, {48, 67, 73, 255});
+        label("SONWARE V5", 14, 37, 10, {0, 220, 235}, 90);
+        label("Windows  -  Geode", 14, 21, 9, {145, 166, 170}, 90);
 
         showTab(0);
         return true;
@@ -716,57 +712,39 @@ public:
         clearContent();
         constexpr float x = 133.f;
         if (tab == 0) {
-            label("Dashboard", x, 224, 18, {241,229,255}, 310);
-            label("Predictive input buffer", x, 202, 11, {155,141,177}, 310);
-            s_bufferHud = label("STATUS", x, 169, 13, {139,238,189}, 310);
-            refreshBufferHud();
-            button("STAGES", x, 105, 150, 42, menu_selector(SonwareGuiLayer::onStages), true);
-            button("OPEN CONSOLE", 302, 105, 164, 42, menu_selector(SonwareGuiLayer::onConsole));
-            label("Right Alt: hide  |  Drag title bar: move", x, 55, 10, {165,153,185}, 330);
+            label("Log", x, 224, 18, {0,220,235}, 310);
+            rect(x, 88, 334, 114, {20,27,31,255}, 1);
+            label("[SONWARE] Predictive buffer ready", x+12, 178, 11, {0,220,235}, 300);
+            label("[INFO] Stage changes logged to console", x+12, 154, 10, {175,195,200}, 300);
+            label("[INFO] Check Geode log for details", x+12, 130, 10, {175,195,200}, 300);
+            button("OPEN CONSOLE", x, 32, 334, 40, menu_selector(SonwareGuiLayer::onConsole), true);
         } else if (tab == 1) {
-            label("Stages", x, 224, 18, {241,229,255}, 300);
-            label("Predictive buffer presets", x, 204, 10, {155,141,177}, 300);
+            label("Stages", x, 224, 18, {0,220,235}, 300);
+            label("Predictive buffer presets", x, 204, 10, {175,195,200}, 300);
             button("STAGE 1", x, 150, 106, 38, menu_selector(SonwareGuiLayer::onStage1));
             button("STAGE 2", 247, 150, 106, 38, menu_selector(SonwareGuiLayer::onStage2));
             button("STAGE 3", 361, 150, 106, 38, menu_selector(SonwareGuiLayer::onStage3));
             button("STAGE 4", x, 102, 106, 38, menu_selector(SonwareGuiLayer::onStage4));
             button("EXTREME", 247, 102, 106, 38, menu_selector(SonwareGuiLayer::onExtreme), true);
             button("CYCLE", 361, 102, 106, 38, menu_selector(SonwareGuiLayer::onSonwareCycle));
-            s_bufferHud = label("STATUS", x, 65, 11, {139,238,189}, 325);
+            s_bufferHud = label("STATUS", x, 65, 11, {0,220,235}, 325);
             refreshBufferHud();
         } else if (tab == 2) {
-            label("Assist", x, 224, 18, {241,229,255}, 300);
-            label("SHIP STRAIGHT FLY", x, 197, 11, {194,161,250}, 300);
+            label("Assist", x, 224, 18, {0,220,235}, 300);
+            label("SHIP STRAIGHT FLY", x, 197, 11, {0,220,235}, 300);
             button("LEGIT", x, 147, 154, 36, menu_selector(SonwareGuiLayer::onShipLegit), m_shipStyle == 1);
             button("AUTO", 313, 147, 154, 36, menu_selector(SonwareGuiLayer::onShipAuto), m_shipStyle == 2);
-            label("LEGIT WAVE - PREDICTIVE RESCUE", x, 126, 11, {194,161,250}, 330);
+            label("LEGIT WAVE - PREDICTIVE RESCUE", x, 126, 11, {0,220,235}, 330);
             button(m_waveAssistRequested ? "REQUESTED: ON" : "REQUESTED: OFF", x, 80, 154, 34, menu_selector(SonwareGuiLayer::onWaveRequest));
             button("RESCUE WINDOW", 313, 80, 154, 34, menu_selector(SonwareGuiLayer::onRescueWindow));
             button("TOGGLE MODE", x, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipToggle));
             button("HOLD MODE", 313, 38, 154, 32, menu_selector(SonwareGuiLayer::onShipHold));
-            label("Ship key: change in Geode mod settings.", x, 19, 9, {175,151,182}, 325);
-        } else if (tab == 3) {
-            label("Optimisation", x, 224, 18, {241,229,255}, 330);
-            label("Simulation scan budget (active)", x, 201, 10, {165,150,188}, 330);
-            button("LOW-END", x, 155, 106, 34, menu_selector(SonwareGuiLayer::onLowEnd));
-            button("BALANCED", 247, 155, 106, 34, menu_selector(SonwareGuiLayer::onBalanced), true);
-            button("FULL", 361, 155, 106, 34, menu_selector(SonwareGuiLayer::onFull));
-            button("FPS MONITOR", x, 107, 154, 34, menu_selector(SonwareGuiLayer::onFpsToggle));
-            button("SIM OPTIMISER", 313, 107, 154, 34, menu_selector(SonwareGuiLayer::onSimToggle));
-            label("Visual optimisers need engine hooks; not active yet.", x, 70, 9, {170,151,190}, 330);
-            label("Preset is saved using Geode settings.", x, 50, 9, {170,151,190}, 330);
-        } else if (tab == 4) {
-            label("Logs", x, 224, 18, {241,229,255}, 330);
-            rect(x, 88, 334, 114, {11,10,18,255}, 1);
-            label("[SONWARE] Dashboard ready", x+12, 178, 11, {147,236,183}, 300);
-            label("[INFO] Stage changes logged to console", x+12, 154, 10, {182,165,210}, 300);
-            label("[INFO] See Geode log for additional events", x+12, 130, 10, {182,165,210}, 300);
-            button("OPEN CONSOLE", x, 32, 334, 40, menu_selector(SonwareGuiLayer::onConsole), true);
+            label("Ship key: configure in Geode settings.", x, 19, 9, {175,195,200}, 325);
         } else {
-            label("Settings", x, 224, 18, {241,229,255}, 330);
-            label("GUI hotkey is configurable in Geode settings.", x, 178, 11, {182,165,210}, 330);
-            label("Ship assist key is configurable too.", x, 151, 11, {182,165,210}, 330);
-            label("GUI opens only after you press its hotkey.", x, 124, 11, {182,165,210}, 330);
+            label("Settings", x, 224, 18, {0,220,235}, 330);
+            label("GUI hotkey is configurable in Geode settings.", x, 178, 11, {175,195,200}, 330);
+            label("Ship assist key is configurable too.", x, 151, 11, {175,195,200}, 330);
+            label("GUI opens when you press its hotkey.", x, 124, 11, {175,195,200}, 330);
             button("OPEN CONSOLE", x, 48, 200, 38, menu_selector(SonwareGuiLayer::onConsole), true);
         }
     }
@@ -774,8 +752,8 @@ public:
     void onStages(cocos2d::CCObject*) { showTab(1); }
     void onAssist(cocos2d::CCObject*) { showTab(2); }
     void onOptimise(cocos2d::CCObject*) { showTab(3); }
-    void onLogs(cocos2d::CCObject*) { showTab(4); }
-    void onSettings(cocos2d::CCObject*) { showTab(5); }
+    void onLogs(cocos2d::CCObject*) { showTab(0); }
+    void onSettings(cocos2d::CCObject*) { showTab(3); }
     void onShipLegit(cocos2d::CCObject*) {
         Mod::get()->setSettingValue<std::string>("ship-style", "Legit");
         m_shipStyle = 1; showTab(2);
@@ -1169,3 +1147,4 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
         GJBaseGameLayer::playerTouchedRing(player, ring);
     }
 };
+
