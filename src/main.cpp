@@ -667,6 +667,8 @@ public:
         if (!cocos2d::CCLayer::init()) return false;
         auto win = cocos2d::CCDirector::sharedDirector()->getWinSize();
         this->setContentSize(win);
+        // Receive touches after CCMenu buttons (priority -128), but before game menus.
+        this->setTouchEnabled(true);
         this->scheduleUpdate();
         m_panel = cocos2d::CCLayerColor::create({14, 13, 23, 255}, W, H);
         if (!m_panel) return false;
@@ -781,6 +783,21 @@ public:
     void onFull(cocos2d::CCObject*) { Mod::get()->setSettingValue<std::string>("performance-preset", "Full"); showTab(3); }
     void onFpsToggle(cocos2d::CCObject*) { m_fpsMonitor = !m_fpsMonitor; showTab(3); }
     void onSimToggle(cocos2d::CCObject*) { m_simOptimizer = !m_simOptimizer; showTab(3); }
+
+    // Targeted touch capture: button menus get first chance to handle clicks.
+    // All other clicks inside SONWARE are swallowed so underlying GD menus
+    // cannot also receive them. Outside the panel, GD works normally.
+    void registerWithTouchDispatcher() override {
+        cocos2d::CCDirector::sharedDirector()->getTouchDispatcher()
+            ->addTargetedDelegate(this, -127, true);
+    }
+
+    bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent*) override {
+        if (!m_panel || !m_panel->isVisible()) return false;
+        auto local = m_panel->convertToNodeSpace(touch->getLocation());
+        return local.x >= 0.f && local.x <= W &&
+               local.y >= 0.f && local.y <= H;
+    }
 
     void update(float) override {
         bool rightAltDown = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
