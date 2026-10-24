@@ -695,7 +695,7 @@ public:
         rect(12, H-28, 3, 16, {0, 220, 235, 255});
         label("SONWARE V5", 22, H-20, 17, {225, 245, 247}, 150);
         label("PREDICTIVE BUFFER", 144, H-20, 10, {149, 134, 174}, 180);
-        label("Right Alt  •  Hide / Show", W-12, H-20, 9, {161, 146, 188}, 126, {1.f,.5f});
+        label("K  •  Hide / Show", W-12, H-20, 9, {161, 146, 188}, 126, {1.f,.5f});
 
         label("NAVIGATION", 14, 221, 9, {128, 200, 210}, 95);
         button("LOG", 9, 186, 98, 24, menu_selector(SonwareGuiLayer::onLogs));
@@ -852,11 +852,11 @@ public:
 static bool s_guiHotkeyWasDown = false;
 static bool s_guiOpen = false;
 static void sonwarePollGuiHotkey(cocos2d::CCNode* scene) {
-    // Temporary diagnostic hotkey: F10, independent of the Geode setting.
-    int key = VK_F10;
+    // Temporary diagnostic hotkey: K, independent of the Geode setting.
+    int key = 0x4B; // K key (Windows virtual-key code)
     bool down = (GetAsyncKeyState(key) & 0x8000) != 0;
     if (down && !s_guiHotkeyWasDown && scene) {
-        log::info("[SONWARE] F10 detected!");
+        log::info("[SONWARE] K detected!");
         if (s_guiOpen) {
             // Locate and remove the overlay without affecting the game scene.
             auto children = scene->getChildren();
